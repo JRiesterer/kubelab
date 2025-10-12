@@ -411,7 +411,7 @@ step "Installing kubectl"
 install_kubectl() {
     if command_exists kubectl; then
         local kubectl_version
-        kubectl_version=$(kubectl version --client --short 2>/dev/null | head -1 || echo "unknown")
+        kubectl_version=$(kubectl version --client 2>/dev/null | grep -o 'GitVersion:"[^"]*"' | cut -d'"' -f2 || echo "unknown")
         log_success "kubectl already installed: $kubectl_version"
         return 0
     fi
@@ -439,7 +439,7 @@ install_kubectl() {
     run mv /tmp/kubectl /usr/local/bin/kubectl
     
     # Verify installation
-    if kubectl version --client --short >>"$LOGFILE" 2>&1; then
+    if kubectl version --client >>"$LOGFILE" 2>&1; then
         log_success "kubectl installed successfully"
     else
         die "kubectl installation verification failed"
@@ -493,7 +493,7 @@ step "Installing Helm"
 install_helm() {
     if command_exists helm; then
         local helm_version
-        helm_version=$(helm version --short 2>/dev/null || echo "unknown")
+        helm_version=$(helm version 2>/dev/null | grep -o 'Version:"[^"]*"' | cut -d'"' -f2 || echo "unknown")
         log_success "Helm already installed: $helm_version"
         return 0
     fi
@@ -506,7 +506,7 @@ install_helm() {
     fi
     
     # Verify installation
-    if helm version --short >>"$LOGFILE" 2>&1; then
+    if helm version >>"$LOGFILE" 2>&1; then
         log_success "Helm installed successfully"
     else
         die "Helm installation verification failed"
@@ -668,7 +668,7 @@ step "Installing Falco security monitoring"
 
 install_falco() {
     # Check if Falco is already installed
-    if kubectl get namespace falco >>"$LOGFILE" 2>&1; then
+    if kubectl get ns falco >>"$LOGFILE" 2>&1; then
         log_success "Falco namespace already exists, checking installation..."
         
         local falco_pods
@@ -1070,9 +1070,9 @@ ${BOLD}${GREEN}╔════════════════════�
 
 ${BOLD}Installation Summary:${NC}
 ├─ ${GREEN}✓${NC} Docker CE: $(docker --version 2>/dev/null || echo "Check failed")
-├─ ${GREEN}✓${NC} kubectl: $(kubectl version --client --short 2>/dev/null | head -1 || echo "Check failed")  
+├─ ${GREEN}✓${NC} kubectl: $(kubectl version --client 2>/dev/null | grep -o 'GitVersion:"[^"]*"' | cut -d'"' -f2 || echo "Check failed")  
 ├─ ${GREEN}✓${NC} kind: $(kind --version 2>/dev/null || echo "Check failed")
-├─ ${GREEN}✓${NC} Helm: $(helm version --short 2>/dev/null || echo "Check failed")
+├─ ${GREEN}✓${NC} Helm: $(helm version 2>/dev/null | grep -o 'Version:"[^"]*"' | cut -d'"' -f2 || echo "Check failed")
 ├─ ${GREEN}✓${NC} Kubernetes Cluster: $(kubectl config current-context 2>/dev/null || echo "No context")
 ├─ ${GREEN}✓${NC} Falco Security: $(kubectl get pods -n falco --no-headers 2>/dev/null | wc -l) pods deployed
 ├─ ${GREEN}✓${NC} Vulnerable Lab Repo: ${VULN_REPO_DIR}
