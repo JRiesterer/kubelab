@@ -84,7 +84,7 @@ Key configuration variables (edit in `setup.sh` as needed):
 readonly TARGET_OS="ubuntu"
 readonly MIN_UBUNTU_MAJOR=24
 readonly INSTALL_DIR="/opt/kubelab"
-readonly VULN_REPO_URL="https://github.com/kubernetes/goat.git"
+readonly VULN_REPO_URL="https://github.com/madhuakula/kubernetes-goat.git"
 readonly KIND_VERSION="v0.26.0"
 ```
 
@@ -163,8 +163,8 @@ After successful setup:
 2. **Deploy Vulnerable Applications**:
    ```bash
    # Review manifests first!
-   ls -la /opt/kubelab/kube-goat/deploy/
-   kubectl apply -f /opt/kubelab/kube-goat/deploy/
+   ls -la /opt/kubelab/kubernetes-goat/deploy/
+   kubectl apply -f /opt/kubelab/kubernetes-goat/deploy/
    ```
 
 3. **Monitor Security Events**:

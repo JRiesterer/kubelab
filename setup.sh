@@ -23,8 +23,11 @@ IFS=$'\n\t'
 readonly TARGET_OS="ubuntu"
 readonly MIN_UBUNTU_MAJOR=24   # script checks basic compatibility
 readonly INSTALL_DIR="/opt/kubelab"   # where we clone demo repos
-readonly VULN_REPO_URL="https://github.com/kubernetes/goat.git"  # change if you prefer
-readonly VULN_REPO_DIR="${INSTALL_DIR}/kube-goat"
+readonly VULN_REPO_URL="https://github.com/madhuakula/kubernetes-goat.git"  # Kubernetes Goat vulnerable lab
+# Alternative repositories if the above is not accessible:
+# readonly VULN_REPO_URL="https://github.com/cncf/cnf-testbed.git"
+# readonly VULN_REPO_URL="https://github.com/securekubernetes/securekubernetes.git"
+readonly VULN_REPO_DIR="${INSTALL_DIR}/kubernetes-goat"
 readonly KIND_VERSION="v0.26.0"
 readonly KUBECTL_STABLE_URL="https://dl.k8s.io/release/stable.txt"
 readonly HELM_GET_SCRIPT="https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"

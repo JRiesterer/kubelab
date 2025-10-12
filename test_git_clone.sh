@@ -45,11 +45,24 @@ echo "Testing non-interactive git clone functionality..."
 echo "This demonstrates how the setup script avoids user prompts during git operations."
 echo ""
 
+# Test repository URL first
+REPO_URL="https://github.com/madhuakula/kubernetes-goat.git"
+echo "🔍 Testing repository accessibility: $REPO_URL"
+
+# Check if repository exists by testing the URL
+if curl -s --head --fail "$REPO_URL" >/dev/null 2>&1; then
+    echo "✅ Repository is accessible"
+else
+    echo "⚠️  Repository test failed, but proceeding with git clone test..."
+fi
+
+echo ""
+
 # Clean up any previous test
 rm -rf /tmp/test_clone 2>/dev/null || true
 
-# Test the function
-git_clone_noninteractive "https://github.com/kubernetes/goat.git" "/tmp/test_clone" 1
+# Test the function with a known working repository
+git_clone_noninteractive "$REPO_URL" "/tmp/test_clone" 1
 
 # Verify the clone worked
 if [ -d "/tmp/test_clone/.git" ]; then
