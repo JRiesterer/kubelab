@@ -1136,8 +1136,8 @@ ${BOLD}${GREEN}Happy Security Testing! 🛡️${NC}
 EOF
 
 # Log final completion time
-local end_time=$(date +%s)
-local duration=$((end_time - SCRIPT_START_TIME))
+end_time=$(date +%s)
+duration=$((end_time - SCRIPT_START_TIME))
 log_success "Total setup time: ${duration} seconds"
 
 exit 0

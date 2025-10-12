@@ -1,40 +1,40 @@
 # Kubernetes Security Lab Setup
 
-An enhanced, fully automated setup script for creating a Kubernetes security lab environment on Ubuntu Server 24.04.3 LTS. This lab is designed for evaluating container escape exploits and security mitigations in a controlled environment.
+An automated setup script for creating a Kubernetes security lab environment on Ubuntu Server 24.04.3 LTS. This lab is designed for evaluating container escape exploits and security mitigations in a controlled environment.
 
-## 🎯 Features
+## Features
 
 ### Enhanced User Experience
-- **🌈 Colored output** with clear status indicators (✓ success, ⚠ warning, ✗ error, ℹ info)
-- **📊 Progress bar** showing installation progress with step-by-step tracking
-- **📝 Comprehensive logging** to `setup.log` with timestamps and detailed information
-- **🤖 Zero user interaction** - fully automated installation with no prompts
+- Colored output with clear status indicators
+- Progress bar showing installation progress
+- Comprehensive logging to `setup.log` with timestamps
+- Zero user interaction - fully automated installation
 
 ### Robust Installation
-- **🔄 Retry mechanisms** for network operations with exponential backoff
-- **✅ Idempotent operations** - safe to run multiple times
-- **🛡️ Enhanced error handling** with detailed failure reporting
-- **📦 Complete dependency management** with verification steps
+- Retry mechanisms for network operations
+- Idempotent operations - safe to run multiple times
+- Enhanced error handling with detailed failure reporting
+- Complete dependency management with verification
 
 ### Security Tools Included
-- **Docker CE** - Container runtime
-- **kubectl** - Kubernetes command-line tool
-- **kind** - Kubernetes in Docker for local clusters
-- **Helm** - Kubernetes package manager
-- **Falco** - Runtime security monitoring
-- **auditd** - Linux audit framework with custom rules
-- **AIDE** - File integrity monitoring
-- **Additional security tools** - strace, tcpdump, lsof, htop, etc.
+- Docker CE - Container runtime
+- kubectl - Kubernetes command-line tool
+- kind - Kubernetes in Docker for local clusters
+- Helm - Kubernetes package manager
+- Falco - Runtime security monitoring
+- auditd - Linux audit framework with custom rules
+- AIDE - File integrity monitoring
+- Additional security tools - strace, tcpdump, lsof, htop, etc.
 
 ### Git Clone Improvements
 The script includes special handling for git operations to eliminate user prompts:
 
-- **Non-interactive configuration** - Sets `GIT_TERMINAL_PROMPT=0` and appropriate askpass handlers
-- **SSH to HTTPS conversion** - Automatically converts SSH URLs to HTTPS for public repos
-- **Credential handling** - Configures git to never prompt for credentials
-- **Timeout protection** - Prevents hanging on network issues
+- Non-interactive configuration - Sets environment variables to prevent prompts
+- SSH to HTTPS conversion - Automatically converts SSH URLs to HTTPS for public repos
+- Credential handling - Configures git to never prompt for credentials
+- Timeout protection - Prevents hanging on network issues
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Clone the repository
@@ -48,15 +48,15 @@ chmod +x setup.sh
 sudo ./setup.sh
 ```
 
-## 📋 System Requirements
+## System Requirements
 
-- **OS**: Ubuntu Server 24.04.3 LTS (or compatible)
-- **Memory**: 4GB RAM minimum, 8GB recommended
-- **Storage**: 20GB free space minimum
-- **Network**: Internet connectivity required for downloads
-- **Privileges**: Root/sudo access required
+- OS: Ubuntu Server 24.04.3 LTS (or compatible)
+- Memory: 4GB RAM minimum, 8GB recommended
+- Storage: 20GB free space minimum
+- Network: Internet connectivity required for downloads
+- Privileges: Root/sudo access required
 
-## 📊 Installation Progress
+## Installation Progress
 
 The script provides real-time progress indication:
 
@@ -76,7 +76,7 @@ Steps include:
 9. Falco security monitoring
 10. Host security tools (auditd & AIDE)
 
-## 🔧 Configuration
+## Configuration
 
 Key configuration variables (edit in `setup.sh` as needed):
 
@@ -88,7 +88,7 @@ readonly VULN_REPO_URL="https://github.com/madhuakula/kubernetes-goat.git"
 readonly KIND_VERSION="v0.26.0"
 ```
 
-## 📝 Logging
+## Logging
 
 All operations are logged to `setup.log` in the current directory with:
 - Timestamps for all operations
@@ -103,7 +103,7 @@ Example log format:
 2024-10-12T10:30:45-04:00 SUCCESS: Docker installed successfully
 ```
 
-## 🔍 Git Clone Enhancements
+## Git Clone Enhancements
 
 The script handles git operations without user interaction through:
 
@@ -128,7 +128,7 @@ git -c advice.detachedHead=false \
 Automatically converts URLs like:
 - `git@github.com:user/repo.git` → `https://github.com/user/repo.git`
 
-## 🛡️ Security Features
+## Security Features
 
 ### Audit Rules
 Custom audit rules monitor:
@@ -149,7 +149,7 @@ Custom audit rules monitor:
 - Real-time threat detection
 - Custom rule sets for container security
 
-## 📚 Post-Installation
+## Post-Installation
 
 After successful setup:
 
@@ -180,37 +180,24 @@ After successful setup:
 4. **Create VM Snapshot**:
    Take a snapshot for easy reset between exercises.
 
-## 🧪 Testing
-
-A test script is included to verify git clone functionality:
-
-```bash
-chmod +x test_git_clone.sh
-./test_git_clone.sh
-```
-
-## ⚠️ Security Warning
+## Security Warning
 
 This environment contains intentionally vulnerable applications. Use only in isolated lab environments. Never expose to production networks.
 
-## 📞 Support
+## Support
 
 - Check `setup.log` for detailed error information
 - Verify system requirements are met
 - Ensure network connectivity for downloads
 - Review Ubuntu version compatibility
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Test your changes thoroughly
 4. Submit a pull request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
----
-
-**Happy Security Testing! 🛡️**
