@@ -187,7 +187,8 @@ apt-get update >/dev/null 2>&1
 apt-get install -y --no-install-recommends falco 2>/dev/null || echo "⚠ Falco installation may have failed"
 
 # Copy custom Kubernetes rules for container security
-cp "${RESOURCES_DIR}/k8s_security_rules.yaml" "/etc/falco/k8s_security_rules.yaml"
+mkdir -p "/etc/falco/rules.d"
+cp "${RESOURCES_DIR}/k8s_security_rules.yaml" "/etc/falco/rules.d/k8s_security_rules.yaml"
 
 # Configure Falco for container monitoring
 falco_config="/etc/falco/falco.yaml"
@@ -199,9 +200,9 @@ if [ -f "$falco_config" ]; then
     sed -i 's/^json_output: false$/json_output: true/' "$falco_config" 2>/dev/null || true
     sed -i 's/^buffered_outputs: false$/buffered_outputs: true/' "$falco_config" 2>/dev/null || true
     
-    # Enable custom rules
-    if ! grep -q "k8s_security_rules.yaml" "$falco_config" 2>/dev/null; then
-        sed -i '/rules_file:/a\  - /etc/falco/k8s_security_rules.yaml' "$falco_config" 2>/dev/null || true
+    # Add our custom rules file specifically (in addition to rules.d directory)
+    if ! grep -q "/etc/falco/rules.d/k8s_security_rules.yaml" "$falco_config" 2>/dev/null; then
+        sed -i '/rules_file:/a\  - /etc/falco/rules.d/k8s_security_rules.yaml' "$falco_config" 2>/dev/null || true
     fi
 fi
 
@@ -219,10 +220,10 @@ systemctl start falco 2>/dev/null || true
 if systemctl is-active --quiet falco; then
     echo "✓ Falco runtime security monitoring is active"
     # Check if custom rules are loaded
-    if grep -q "k8s_security_rules.yaml" "$falco_config" 2>/dev/null; then
-        echo "✓ Custom Kubernetes security rules loaded"
+    if [ -f "/etc/falco/rules.d/k8s_security_rules.yaml" ]; then
+        echo "✓ Custom Kubernetes security rules deployed"
     else
-        echo "⚠ Custom rules may not be loaded properly"
+        echo "⚠ Custom rules may not be deployed properly"
     fi
 else
     echo "⚠ Falco may not be running properly - check 'systemctl status falco'"

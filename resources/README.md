@@ -26,7 +26,7 @@ These files are automatically copied to their appropriate locations by the setup
 
 ## File Destinations:
 
-- `/etc/falco/k8s_security_rules.yaml` ← `k8s_security_rules.yaml`
+- `/etc/falco/rules.d/k8s_security_rules.yaml` ← `k8s_security_rules.yaml`
 - `/etc/systemd/system/falco.service.d/override.conf` ← `falco-override.conf`
 - `/etc/audit/rules.d/99-kubelab-container.rules` ← `99-kubelab-container.rules`
 - `/etc/security/limits.d/99-kubelab.conf` ← `99-kubelab.conf`
