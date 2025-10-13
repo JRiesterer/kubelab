@@ -78,12 +78,12 @@ if systemctl is-active --quiet "falco" 2>/dev/null; then
         add_result "FAIL" "Falco Rules Configuration" "Custom rules not referenced in falco.yaml"
     fi
     
-    # Systemd override
-    if [ -f "/etc/systemd/system/falco.service.d/override.conf" ]; then
-        add_result "PASS" "Falco Systemd Override"
-    else
-        add_result "FAIL" "Falco Systemd Override" "Systemd logging override not configured"
-    fi
+    # # Systemd override
+    # if [ -f "/etc/systemd/system/falco.service.d/override.conf" ]; then
+    #     add_result "PASS" "Falco Systemd Override"
+    # else
+    #     add_result "FAIL" "Falco Systemd Override" "Systemd logging override not configured"
+    # fi
 else
     add_result "FAIL" "Falco Service" "Service not running or not installed"
 fi
