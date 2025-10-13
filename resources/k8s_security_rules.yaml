@@ -3,7 +3,7 @@
 - rule: Container Escape Attempt via Privileged Container
   desc: Detect potential container escape attempts through privileged containers
   condition: >
-    evt.type = execve and container and
+    evt.type = execve and container.id exists and
     (proc.name in (nsenter, unshare, capsh, chroot, pivot_root) or
      proc.args contains "privileged" or
      proc.args contains "--cap-add")
@@ -14,7 +14,7 @@
 - rule: Mount Sensitive Host Path in Container
   desc: Detect mounting of sensitive host paths into containers
   condition: >
-    evt.type = execve and container and
+    evt.type = execve and container.id exists and
     (proc.args contains "/etc" or
      proc.args contains "/proc" or
      proc.args contains "/sys" or
@@ -27,7 +27,7 @@
 - rule: Container Process with Suspicious Network Activity
   desc: Detect containers making suspicious network connections
   condition: >
-    container and
+    container.id exists and
     (fd.sport in (22,23,135,139,445,1433,1521,3306,3389,5432,5984,6379,8086,9200,11211,27017) or
      fd.dport in (22,23,135,139,445,1433,1521,3306,3389,5432,5984,6379,8086,9200,11211,27017))
   output: "Suspicious network activity from container (user=%user.name command=%proc.cmdline container=%container.id proto=%fd.l4proto src=%fd.sip sport=%fd.sport dst=%fd.cip dport=%fd.dport)"
@@ -37,7 +37,7 @@
 - rule: Container File Access to Host Filesystem
   desc: Detect container processes accessing host filesystem outside expected paths
   condition: >
-    evt.type in (open, openat, creat, open_by_handle_at) and container and
+    evt.type in (open, openat, creat, open_by_handle_at) and container.id exists and
     fd.name startswith /host and
     not fd.name startswith /host/proc and
     not fd.name startswith /host/sys
@@ -49,6 +49,7 @@
   desc: Detect processes accessing Kubernetes secrets
   condition: >
     evt.type in (open, openat, creat, open_by_handle_at) and
+    container.id exists and
     fd.name contains "/var/run/secrets/kubernetes.io/"
   output: "Kubernetes secret accessed (user=%user.name command=%proc.cmdline file=%fd.name container=%container.id)"
   priority: NOTICE
@@ -57,7 +58,7 @@
 - rule: Container Running with Excessive Privileges
   desc: Detect containers running with dangerous capabilities
   condition: >
-    evt.type = execve and container and
+    evt.type = execve and container.id exists and
     (proc.args contains "SYS_ADMIN" or
      proc.args contains "SYS_PTRACE" or
      proc.args contains "SYS_MODULE" or
