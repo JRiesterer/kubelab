@@ -65,7 +65,8 @@
   condition: >
     container.id != host and
     evt.type in (open, openat) and
-    fd.name startswith "/proc"
+    fd.name startswith "/proc" and
+    not container.name contains "kind-control-plane"
   output: >
     container accessing host /proc |
     user=%user.name container_id=%container.id container_name=%container.name
