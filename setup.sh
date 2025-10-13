@@ -660,7 +660,7 @@ deploy_vuln_repo() {
     log_info "Scanning for Kubernetes manifests..."
     local manifest_count=0
     
-    for manifest_dir in "${VULN_REPO_DIR}/deploy" "${VULN_REPO_DIR}/manifests" "${VULN_REPO_DIR}/k8s"; do
+    for manifest_dir in "${VULN_REPO_DIR}/scenarios" "${VULN_REPO_DIR}/manifests" "${VULN_REPO_DIR}/k8s"; do
         if [ -d "$manifest_dir" ]; then
             local found_manifests
             found_manifests=$(find "$manifest_dir" -maxdepth 2 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | wc -l)
@@ -673,7 +673,7 @@ deploy_vuln_repo() {
     
     if [ "$manifest_count" -gt 0 ]; then
         log_success "Found $manifest_count total Kubernetes manifest files"
-        log_warning "Review manifests before applying: ls -la ${VULN_REPO_DIR}/deploy/ ${VULN_REPO_DIR}/manifests/ ${VULN_REPO_DIR}/k8s/ 2>/dev/null"
+        log_warning "Review manifests before applying: ls -la ${VULN_REPO_DIR}/scenarios/ ${VULN_REPO_DIR}/manifests/ ${VULN_REPO_DIR}/k8s/ 2>/dev/null"
     else
         log_info "No standard manifest directories found. Check repository documentation for deployment instructions."
     fi
@@ -1119,7 +1119,7 @@ printf "   # IMPORTANT: Review manifests before applying!\n"
 printf "   ls -la %s/deploy/ %s/manifests/ 2>/dev/null\n" "${VULN_REPO_DIR}" "${VULN_REPO_DIR}"
 printf "   \n"
 printf "   # After review, deploy:\n"
-printf "   kubectl apply -f %s/deploy/  # (adjust path as needed)\n" "${VULN_REPO_DIR}"
+printf "   kubectl apply -f %s/scenarios/  # (adjust path as needed)\n" "${VULN_REPO_DIR}"
 
 printf "\n4. Monitor Security Events:\n"
 printf "   # View Falco security alerts:\n"
