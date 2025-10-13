@@ -293,24 +293,26 @@ if [ ! -f /var/lib/aide/aide.db ]; then
     if [ ! -f /etc/aide/aide.conf ]; then
         echo "Installing AIDE configuration..."
         mkdir -p /etc/aide
+        mkdir -p /var/lib/aide
         cp "${RESOURCES_DIR}/aide.conf" "/etc/aide/aide.conf"
         echo "✓ AIDE configuration installed"
+    else
+        # Ensure directory exists even if config exists
+        mkdir -p /var/lib/aide
     fi
     
     # Find appropriate AIDE initialization method
     aide_init_cmd=""
-    if command -v aideinit >/dev/null 2>&1; then
-        aide_init_cmd="aideinit"
-    elif command -v aide >/dev/null 2>&1; then
-        aide_init_cmd="aide --init"
+    if command -v aide >/dev/null 2>&1; then
+        aide_init_cmd="aide --init --config=/etc/aide/aide.conf"
     else
-        echo "⚠ No AIDE initialization command found"
+        echo "⚠ AIDE command not found"
     fi
     
     if [ -z "$aide_init_cmd" ]; then
         echo "⚠ AIDE initialization not available - creating minimal database"
-        mkdir -p /var/lib/aide
         touch /var/lib/aide/aide.db 2>/dev/null || true
+        echo "✓ Created minimal AIDE database as fallback"
     else
         echo "Using AIDE initialization: $aide_init_cmd"
         
@@ -329,7 +331,6 @@ if [ ! -f /var/lib/aide/aide.db ]; then
             echo "Check /tmp/aide-init.log for details:"
             cat /tmp/aide-init.log
             echo "Creating minimal AIDE database to continue setup..."
-            mkdir -p /var/lib/aide
             touch /var/lib/aide/aide.db 2>/dev/null || true
             echo "✓ Created minimal AIDE database as fallback"
         else
@@ -354,21 +355,35 @@ if [ ! -f /var/lib/aide/aide.db ]; then
                 echo "⚠ AIDE initialization timed out after 30 minutes"
                 kill $aide_pid 2>/dev/null || true
                 echo "Creating minimal AIDE database to continue setup..."
-                mkdir -p /var/lib/aide
                 touch /var/lib/aide/aide.db 2>/dev/null || true
+                echo "✓ Created minimal AIDE database as fallback"
             else
                 wait $aide_pid
                 aide_exit_code=$?
                 echo  # newline after dots
                 
-                if [ $aide_exit_code -eq 0 ] && [ -f /var/lib/aide/aide.db.new ]; then
-                    mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
-                    echo "✓ AIDE database initialized successfully"
+                if [ $aide_exit_code -eq 0 ]; then
+                    # Check for the new database file
+                    if [ -f /var/lib/aide/aide.db.new ]; then
+                        # Move the new database to become active
+                        mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+                        echo "✓ AIDE database initialized successfully"
+                        
+                        # Verify the database works
+                        if aide --check --config=/etc/aide/aide.conf >/dev/null 2>&1; then
+                            echo "✓ AIDE database verification passed"
+                        else
+                            echo "⚠ AIDE database verification had issues (but continuing)"
+                        fi
+                    else
+                        echo "⚠ AIDE initialization completed but no database file found"
+                        touch /var/lib/aide/aide.db 2>/dev/null || true
+                        echo "✓ Created minimal AIDE database as fallback"
+                    fi
                 else
                     echo "⚠ AIDE initialization had issues (exit code: $aide_exit_code)"
                     echo "Check /tmp/aide-init.log for details"
                     # Create empty database as fallback
-                    mkdir -p /var/lib/aide
                     touch /var/lib/aide/aide.db 2>/dev/null || true
                     echo "✓ Created minimal AIDE database as fallback"
                 fi
