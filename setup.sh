@@ -571,6 +571,27 @@ EOF
     log_info "Creating kind cluster (this may take several minutes)..."
     if run kind create cluster --config /tmp/kind-config.yaml --wait 300s; then
         log_success "Kind cluster created successfully"
+        
+        # Copy kubeconfig to user's home directory
+        if [ -n "${nonroot_user}" ] && [ "${nonroot_user}" != "root" ]; then
+            user_home=$(eval echo "~${nonroot_user}")
+            if [ -d "${user_home}" ]; then
+                log_info "Setting up kubeconfig for user '${nonroot_user}'..."
+                if run mkdir -p "${user_home}/.kube"; then
+                    if run cp /root/.kube/config "${user_home}/.kube/config"; then
+                        if run chown -R "${nonroot_user}:${nonroot_user}" "${user_home}/.kube"; then
+                            log_success "Kubeconfig configured for user '${nonroot_user}'"
+                        else
+                            log_warning "Failed to set kubeconfig ownership"
+                        fi
+                    else
+                        log_warning "Failed to copy kubeconfig"
+                    fi
+                else
+                    log_warning "Failed to create .kube directory"
+                fi
+            fi
+        fi
     else
         die "Failed to create kind cluster"
     fi
@@ -1087,6 +1108,10 @@ printf "   # Or run: newgrp docker\n"
 printf "\n2. Verify Cluster Access:\n"
 printf "   kubectl cluster-info\n"
 printf "   kubectl get nodes\n"
+printf "   kubectl get pods --all-namespaces\n"
+printf "\n   If kubectl shows connection refused errors:\n"
+printf "   sudo cp /root/.kube/config ~/.kube/config\n"
+printf "   sudo chown \$(id -u):\$(id -g) ~/.kube/config\n"
 printf "   kubectl get pods --all-namespaces\n"
 
 printf "\n3. Deploy Vulnerable Applications:\n"
