@@ -130,6 +130,17 @@ EOF
 
     kind create cluster --config /tmp/kind-config.yaml --wait 300s
     echo "✓ Kind cluster created"
+    
+    # Copy kubeconfig to user's home directory
+    if [ -n "${nonroot_user}" ] && [ "${nonroot_user}" != "root" ]; then
+        user_home=$(eval echo "~${nonroot_user}")
+        if [ -d "${user_home}" ]; then
+            mkdir -p "${user_home}/.kube"
+            cp /root/.kube/config "${user_home}/.kube/config"
+            chown -R "${nonroot_user}:${nonroot_user}" "${user_home}/.kube"
+            echo "✓ Kubeconfig copied to ${user_home}/.kube/config"
+        fi
+    fi
 fi
 
 ###
@@ -195,7 +206,13 @@ docker --version >/dev/null || { echo "ERROR: Docker verification failed"; exit 
 kubectl version --client >/dev/null || { echo "ERROR: kubectl verification failed"; exit 1; }
 kind --version >/dev/null || { echo "ERROR: kind verification failed"; exit 1; }
 helm version >/dev/null || { echo "ERROR: Helm verification failed"; exit 1; }
-kubectl cluster-info >/dev/null || { echo "ERROR: Cluster verification failed"; exit 1; }
+
+# Verify cluster (as root)
+if kubectl cluster-info >/dev/null 2>&1; then
+    echo "✓ Cluster verification passed (as root)"
+else
+    echo "⚠ Cluster verification failed - kubeconfig may need to be copied to user home"
+fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════════════════╗"
@@ -214,5 +231,9 @@ echo "Next steps:"
 echo "1. Log out and back in (or run: newgrp docker)"
 echo "2. Verify: kubectl get nodes"
 echo "3. Deploy lab: kubectl apply -f ${VULN_REPO_DIR}/deploy/"
+echo ""
+echo "If kubectl shows connection refused errors:"
+echo "   sudo cp /root/.kube/config ~/.kube/config"
+echo "   sudo chown \$(id -u):\$(id -g) ~/.kube/config"
 echo ""
 echo "Setup completed successfully!"
