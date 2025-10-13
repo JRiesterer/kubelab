@@ -14,6 +14,7 @@ This directory contains configuration files used by the KubeLab setup scripts.
 ### System Security
 - `99-kubelab.conf` - System security limits configuration
 - `kubelab-logrotate` - Log rotation configuration for audit logs
+- `aide.conf` - AIDE file integrity monitoring configuration
 
 ### Monitoring Scripts
 - `kubelab-security-check` - Security status monitoring script
@@ -31,4 +32,5 @@ These files are automatically copied to their appropriate locations by the setup
 - `/etc/audit/rules.d/99-kubelab-container.rules` ← `99-kubelab-container.rules`
 - `/etc/security/limits.d/99-kubelab.conf` ← `99-kubelab.conf`
 - `/etc/logrotate.d/kubelab` ← `kubelab-logrotate`
+- `/etc/aide/aide.conf` ← `aide.conf`
 - `/usr/local/bin/kubelab-security-check` ← `kubelab-security-check`

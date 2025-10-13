@@ -291,39 +291,10 @@ if [ ! -f /var/lib/aide/aide.db ]; then
     
     # Ensure AIDE configuration exists
     if [ ! -f /etc/aide/aide.conf ]; then
-        echo "Creating AIDE configuration..."
+        echo "Installing AIDE configuration..."
         mkdir -p /etc/aide
-        cat > /etc/aide/aide.conf <<'EOF'
-# AIDE configuration file
-database=file:/var/lib/aide/aide.db
-database_out=file:/var/lib/aide/aide.db.new
-gzip_dbout=yes
-verbose=5
-report_url=file:/tmp/aide.log
-report_url=stdout
-FIPSR = p+i+n+u+g+s+m+c+acl+selinux+xattrs+sha256
-DIR = p+i+n+u+g+acl+selinux+xattrs
-LNK = p+i+n+u+g+l+acl+selinux+xattrs
-DATAONLY =  p+n+u+g+s+acl+selinux+xattrs+sha256
-
-/boot   FIPSR
-/bin    FIPSR
-/sbin   FIPSR
-/lib    FIPSR
-/lib64  FIPSR
-/opt    FIPSR
-/usr    FIPSR
-/etc    FIPSR
-!/var/log.*
-!/var/spool.*
-!/var/lib/aide/aide.db.*
-!/var/lib/docker.*
-!/var/lib/containerd.*
-!/tmp.*
-!/proc.*
-!/sys.*
-!/dev.*
-EOF
+        cp "${RESOURCES_DIR}/aide.conf" "/etc/aide/aide.conf"
+        echo "✓ AIDE configuration installed"
     fi
     
     # Find appropriate AIDE initialization method
@@ -347,44 +318,60 @@ EOF
         $aide_init_cmd >/tmp/aide-init.log 2>&1 &
         aide_pid=$!
         
-        # Show progress dots while AIDE runs (with 30 minute timeout)
-        timeout_count=0
-        max_timeout=360  # 30 minutes (360 * 5 seconds)
-        
-        while kill -0 $aide_pid 2>/dev/null && [ $timeout_count -lt $max_timeout ]; do
-            echo -n "."
-            sleep 5
-            timeout_count=$((timeout_count + 1))
-            
-            # Show time estimate every minute
-            if [ $((timeout_count % 12)) -eq 0 ]; then
-                minutes=$((timeout_count / 12 * 5))
-                echo " (${minutes} min elapsed)"
-            fi
-        done
-        
-        if [ $timeout_count -ge $max_timeout ]; then
+        # Give AIDE a moment to start and check if it exits immediately
+        sleep 2
+        if ! kill -0 $aide_pid 2>/dev/null; then
+            # AIDE exited immediately, check why
+            wait $aide_pid
+            aide_exit_code=$?
             echo ""
-            echo "⚠ AIDE initialization timed out after 30 minutes"
-            kill $aide_pid 2>/dev/null || true
+            echo "⚠ AIDE initialization exited immediately (exit code: $aide_exit_code)"
+            echo "Check /tmp/aide-init.log for details:"
+            cat /tmp/aide-init.log
             echo "Creating minimal AIDE database to continue setup..."
             mkdir -p /var/lib/aide
             touch /var/lib/aide/aide.db 2>/dev/null || true
+            echo "✓ Created minimal AIDE database as fallback"
         else
-            wait $aide_pid
-            aide_exit_code=$?
-            echo  # newline after dots
+            # AIDE is running, show progress
+            timeout_count=0
+            max_timeout=360  # 30 minutes (360 * 5 seconds)
             
-            if [ $aide_exit_code -eq 0 ] && [ -f /var/lib/aide/aide.db.new ]; then
-                mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
-                echo "✓ AIDE database initialized successfully"
-            else
-                echo "⚠ AIDE initialization had issues (exit code: $aide_exit_code)"
-                echo "Check /tmp/aide-init.log for details"
-                # Create empty database as fallback
+            while kill -0 $aide_pid 2>/dev/null && [ $timeout_count -lt $max_timeout ]; do
+                echo -n "."
+                sleep 5
+                timeout_count=$((timeout_count + 1))
+                
+                # Show time estimate every minute
+                if [ $((timeout_count % 12)) -eq 0 ]; then
+                    minutes=$((timeout_count / 12 * 5))
+                    echo " (${minutes} min elapsed)"
+                fi
+            done
+            
+            if [ $timeout_count -ge $max_timeout ]; then
+                echo ""
+                echo "⚠ AIDE initialization timed out after 30 minutes"
+                kill $aide_pid 2>/dev/null || true
+                echo "Creating minimal AIDE database to continue setup..."
                 mkdir -p /var/lib/aide
                 touch /var/lib/aide/aide.db 2>/dev/null || true
-                echo "✓ Created minimal AIDE database as fallback"
+            else
+                wait $aide_pid
+                aide_exit_code=$?
+                echo  # newline after dots
+                
+                if [ $aide_exit_code -eq 0 ] && [ -f /var/lib/aide/aide.db.new ]; then
+                    mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+                    echo "✓ AIDE database initialized successfully"
+                else
+                    echo "⚠ AIDE initialization had issues (exit code: $aide_exit_code)"
+                    echo "Check /tmp/aide-init.log for details"
+                    # Create empty database as fallback
+                    mkdir -p /var/lib/aide
+                    touch /var/lib/aide/aide.db 2>/dev/null || true
+                    echo "✓ Created minimal AIDE database as fallback"
+                fi
             fi
         fi
     fi
