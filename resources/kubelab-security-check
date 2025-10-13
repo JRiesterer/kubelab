@@ -1,334 +1,243 @@
 #!/bin/bash
-# KubeLab Security Status Check - Comprehensive Security Monitoring Verification
+# KubeLab Security Status Check
 
-echo "=== KubeLab Security Monitoring Status ==="
+echo "KubeLab Security Status"
+echo "======================"
 echo
 
-# Color codes for better readability
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Global variables to track results
+PASSED_CHECKS=()
+FAILED_CHECKS=()
 
 # Helper functions
-print_status() {
+add_result() {
     local status=$1
-    local message=$2
-    case $status in
-        "OK") echo -e "${GREEN}✓${NC} $message" ;;
-        "WARNING") echo -e "${YELLOW}⚠${NC} $message" ;;
-        "ERROR") echo -e "${RED}✗${NC} $message" ;;
-        "INFO") echo -e "${BLUE}ℹ${NC} $message" ;;
-    esac
+    local check_name=$2
+    local details=$3
+    
+    if [ "$status" = "PASS" ]; then
+        PASSED_CHECKS+=("$check_name")
+    else
+        FAILED_CHECKS+=("$check_name|$details")
+    fi
 }
 
 check_service() {
     local service=$1
-    local description=$2
-    echo -n "$description: "
+    local check_name=$2
     if systemctl is-active --quiet "$service" 2>/dev/null; then
-        print_status "OK" "Active ($(systemctl show -p ActiveState --value "$service"))"
+        add_result "PASS" "$check_name"
         return 0
     else
-        print_status "ERROR" "Not running"
+        add_result "FAIL" "$check_name" "Service not running or not installed"
         return 1
     fi
 }
 
-echo "=== Core Services Status ==="
+# Core Services
+echo "Running core service checks..."
 
-# Docker Service
 check_service "docker" "Docker Service"
 
 # Kind Cluster
-echo -n "Kind Cluster: "
 if sudo -u $SUDO_USER kubectl get nodes >/dev/null 2>&1; then
-    node_count=$(sudo -u $SUDO_USER kubectl get nodes --no-headers 2>/dev/null | wc -l)
-    print_status "OK" "Active ($node_count nodes)"
+    add_result "PASS" "Kind Cluster"
 else
-    print_status "ERROR" "Not accessible or not running"
+    add_result "FAIL" "Kind Cluster" "Cluster not accessible or not running"
 fi
 
 # Falco Runtime Security
-echo -n "Falco Runtime Security: "
-if check_service "falco" "" >/dev/null 2>&1; then
-    print_status "OK" "Active"
+if systemctl is-active --quiet "falco" 2>/dev/null; then
+    add_result "PASS" "Falco Service"
     
-    # Check Falco configuration
-    echo "  Falco Configuration Checks:"
-    
-    # Check if JSON output is enabled
+    # Falco JSON output
     if grep -q "^json_output: true" /etc/falco/falco.yaml 2>/dev/null; then
-        print_status "OK" "  JSON output enabled"
+        add_result "PASS" "Falco JSON Output"
     else
-        print_status "WARNING" "  JSON output not enabled"
+        add_result "FAIL" "Falco JSON Output" "JSON output not enabled in falco.yaml"
     fi
     
-    # Check if buffered outputs are enabled
+    # Falco buffered outputs
     if grep -q "^buffered_outputs: true" /etc/falco/falco.yaml 2>/dev/null; then
-        print_status "OK" "  Buffered outputs enabled"
+        add_result "PASS" "Falco Buffered Outputs"
     else
-        print_status "WARNING" "  Buffered outputs not enabled"
+        add_result "FAIL" "Falco Buffered Outputs" "Buffered outputs not enabled in falco.yaml"
     fi
     
-    # Check custom rules file
+    # Custom rules file
     if [ -f "/etc/falco/rules.d/k8s_security_rules.yaml" ]; then
-        print_status "OK" "  Custom K8s security rules deployed"
-        # Count custom rules
-        rule_count=$(grep -c "^- rule:" /etc/falco/rules.d/k8s_security_rules.yaml 2>/dev/null)
-        print_status "INFO" "  Custom rules count: ${rule_count:-0}"
+        add_result "PASS" "Falco Custom Rules File"
     else
-        print_status "ERROR" "  Custom rules file missing"
+        add_result "FAIL" "Falco Custom Rules File" "Custom rules file missing at /etc/falco/rules.d/k8s_security_rules.yaml"
     fi
     
-    # Check if custom rules are loaded in config
-    if grep -q "/etc/falco/rules.d/k8s_security_rules.yaml" /etc/falco/falco.yaml 2>/dev/null; then
-        print_status "OK" "  Custom rules referenced in config"
-    elif grep -q "rules.d" /etc/falco/falco.yaml 2>/dev/null; then
-        print_status "OK" "  Rules directory referenced in config"
+    # Custom rules referenced
+    if grep -q "/etc/falco/rules.d/k8s_security_rules.yaml\|rules.d" /etc/falco/falco.yaml 2>/dev/null; then
+        add_result "PASS" "Falco Rules Configuration"
     else
-        print_status "WARNING" "  Custom rules not referenced in config"
-        print_status "INFO" "  Note: Falco may auto-load rules.d directory"
+        add_result "FAIL" "Falco Rules Configuration" "Custom rules not referenced in falco.yaml"
     fi
     
-    # Check systemd override
+    # Systemd override
     if [ -f "/etc/systemd/system/falco.service.d/override.conf" ]; then
-        print_status "OK" "  Systemd logging override configured"
-        if grep -q "StandardOutput=journal" /etc/systemd/system/falco.service.d/override.conf 2>/dev/null; then
-            print_status "OK" "  Journal logging enabled"
-        fi
+        add_result "PASS" "Falco Systemd Override"
     else
-        print_status "WARNING" "  Systemd override not configured"
+        add_result "FAIL" "Falco Systemd Override" "Systemd logging override not configured"
     fi
-    
 else
-    print_status "ERROR" "Not running"
+    add_result "FAIL" "Falco Service" "Service not running or not installed"
 fi
 
 # Audit Daemon
-echo -n "Audit Daemon: "
-if check_service "auditd" "" >/dev/null 2>&1; then
-    print_status "OK" "Active"
+if systemctl is-active --quiet "auditd" 2>/dev/null; then
+    add_result "PASS" "Audit Daemon"
     
-    echo "  Audit Configuration Checks:"
-    
-    # Check custom audit rules
+    # Custom audit rules
     if [ -f "/etc/audit/rules.d/99-kubelab-container.rules" ]; then
-        print_status "OK" "  Custom container audit rules deployed"
-        rule_count=$(grep -c "^-" /etc/audit/rules.d/99-kubelab-container.rules 2>/dev/null)
-        print_status "INFO" "  Audit rules count: ${rule_count:-0}"
+        add_result "PASS" "Audit Rules File"
     else
-        print_status "ERROR" "  Custom audit rules missing"
+        add_result "FAIL" "Audit Rules File" "Custom audit rules missing at /etc/audit/rules.d/99-kubelab-container.rules"
     fi
     
-    # Check if rules are loaded
+    # Rules loaded
     loaded_rules=$(auditctl -l 2>/dev/null | grep "kubelab" | wc -l)
     if [ "${loaded_rules:-0}" -gt 0 ]; then
-        print_status "OK" "  KubeLab audit rules loaded ($loaded_rules active)"
+        add_result "PASS" "Audit Rules Loaded"
     else
-        print_status "WARNING" "  No KubeLab audit rules currently loaded"
+        add_result "FAIL" "Audit Rules Loaded" "No KubeLab audit rules currently loaded"
     fi
     
-    # Check audit log
-    if [ -f "/var/log/audit/audit.log" ]; then
-        log_size=$(stat -c%s "/var/log/audit/audit.log" 2>/dev/null || echo "0")
-        if [ "$log_size" -gt 0 ]; then
-            print_status "OK" "  Audit log active (${log_size} bytes)"
-        else
-            print_status "WARNING" "  Audit log empty"
-        fi
+    # Audit log
+    if [ -f "/var/log/audit/audit.log" ] && [ -s "/var/log/audit/audit.log" ]; then
+        add_result "PASS" "Audit Log"
     else
-        print_status "ERROR" "  Audit log not found"
+        add_result "FAIL" "Audit Log" "Audit log not found or empty"
     fi
 else
-    print_status "ERROR" "Not running"
+    add_result "FAIL" "Audit Daemon" "Service not running or not installed"
 fi
 
-echo ""
-echo "=== File Integrity and Security ==="
+# File Integrity and Security
+echo "Running file integrity and security checks..."
 
 # AIDE Database
-echo -n "AIDE Database: "
 if [ -f /var/lib/aide/aide.db ]; then
     db_size=$(stat -c%s /var/lib/aide/aide.db 2>/dev/null || echo "0")
     if [ "$db_size" -gt 1000 ]; then
-        print_status "OK" "Initialized (${db_size} bytes)"
+        add_result "PASS" "AIDE Database"
     else
-        print_status "WARNING" "Database exists but very small"
+        add_result "FAIL" "AIDE Database" "Database exists but is too small (less than 1KB)"
     fi
 else
-    print_status "ERROR" "Not initialized"
+    add_result "FAIL" "AIDE Database" "Database not initialized at /var/lib/aide/aide.db"
 fi
 
 # Security Limits
-echo -n "Security Limits: "
 if [ -f "/etc/security/limits.d/99-kubelab.conf" ]; then
-    print_status "OK" "KubeLab limits configured"
+    add_result "PASS" "Security Limits Configuration"
     if grep -q "soft core 0" /etc/security/limits.d/99-kubelab.conf 2>/dev/null; then
-        print_status "OK" "  Core dumps disabled"
+        add_result "PASS" "Core Dumps Disabled"
+    else
+        add_result "FAIL" "Core Dumps Disabled" "Core dumps not disabled in limits configuration"
     fi
 else
-    print_status "WARNING" "Security limits not configured"
+    add_result "FAIL" "Security Limits Configuration" "Security limits not configured at /etc/security/limits.d/99-kubelab.conf"
 fi
 
 # Log Rotation
-echo -n "Log Rotation: "
 if [ -f "/etc/logrotate.d/kubelab" ]; then
-    print_status "OK" "KubeLab log rotation configured"
+    add_result "PASS" "Log Rotation"
 else
-    print_status "WARNING" "Log rotation not configured"
+    add_result "FAIL" "Log Rotation" "Log rotation not configured at /etc/logrotate.d/kubelab"
 fi
 
-# System Security Settings
-echo -n "Core Dump Security: "
+# Core Dump Security
 if grep -q "kernel.core_pattern=|/bin/false" /etc/sysctl.conf 2>/dev/null; then
-    print_status "OK" "Core dumps redirected to /bin/false"
+    add_result "PASS" "Core Dump Security"
 else
-    print_status "WARNING" "Core dump security not configured"
+    add_result "FAIL" "Core Dump Security" "Core dumps not redirected to /bin/false in sysctl.conf"
 fi
 
-echo ""
-echo "=== Security Monitoring Tools ==="
-
-# Check for essential security tools
-tools=("strace:System call tracer" "ltrace:Library call tracer" "tcpdump:Network analyzer" "lsof:Open files lister" "htop:Process monitor" "psmisc:Process utilities")
-
-for tool_desc in "${tools[@]}"; do
-    tool="${tool_desc%%:*}"
-    desc="${tool_desc##*:}"
-    echo -n "$desc ($tool): "
+# Essential Security Tools
+echo "Checking security tools..."
+tools=("strace" "ltrace" "tcpdump" "lsof" "htop" "psmisc")
+for tool in "${tools[@]}"; do
     if command -v "$tool" >/dev/null 2>&1; then
-        version=$(${tool} --version 2>&1 | head -1 | cut -d' ' -f1-2 || echo "installed")
-        print_status "OK" "Available"
+        add_result "PASS" "Tool: $tool"
     else
-        print_status "WARNING" "Not installed"
+        add_result "FAIL" "Tool: $tool" "Tool not installed"
     fi
 done
 
-echo ""
-echo "=== Recent Security Events ==="
+# Configuration Validation
+echo "Running configuration validation..."
 
-echo "Recent Falco alerts (last 10 minutes):"
-recent_alerts=$(journalctl -u falco --since "10 minutes ago" --no-pager 2>/dev/null | grep -i "priority\|rule\|container" | tail -5)
-if [ -n "$recent_alerts" ]; then
-    echo "$recent_alerts" | while read -r line; do
-        print_status "INFO" "  $line"
-    done
-else
-    print_status "INFO" "  No recent Falco alerts"
-fi
-
-echo ""
-echo "Recent audit events (last 10 minutes):"
-recent_audit=$(ausearch -ts recent -k kubelab 2>/dev/null | tail -5)
-if [ -n "$recent_audit" ]; then
-    echo "$recent_audit" | while read -r line; do
-        print_status "INFO" "  $line"
-    done
-else
-    print_status "INFO" "  No recent KubeLab audit events"
-fi
-
-echo ""
-echo "=== Configuration Validation ==="
-
-# Check Kubernetes cluster access
-echo -n "Kubernetes API Access: "
+# Kubernetes cluster access
 if sudo -u $SUDO_USER kubectl auth can-i get pods >/dev/null 2>&1; then
-    print_status "OK" "User has cluster access"
-elif sudo -u $SUDO_USER kubectl cluster-info >/dev/null 2>&1; then
-    print_status "OK" "Cluster is accessible"
+    add_result "PASS" "Kubernetes API Access"
 else
-    print_status "WARNING" "User may not have proper cluster access"
-    # Additional troubleshooting info
-    if [ -f "/home/$SUDO_USER/.kube/config" ]; then
-        print_status "INFO" "  User kubeconfig exists"
-    else
-        print_status "WARNING" "  User kubeconfig missing - try: sudo cp /root/.kube/config ~/.kube/config && sudo chown \$(id -u):\$(id -g) ~/.kube/config"
-    fi
+    add_result "FAIL" "Kubernetes API Access" "User does not have proper cluster access"
 fi
 
-# Check Docker group membership
-echo -n "Docker Group Membership: "
+# Docker group membership
 if groups $SUDO_USER 2>/dev/null | grep -q docker; then
-    print_status "OK" "User in docker group"
+    add_result "PASS" "Docker Group Membership"
 else
-    print_status "WARNING" "User not in docker group - run: sudo usermod -aG docker $SUDO_USER (then log out/in)"
+    add_result "FAIL" "Docker Group Membership" "User not in docker group"
 fi
 
-# Check kind cluster details
-echo -n "Kind Cluster Details: "
+# Kind cluster details
 kind_clusters=$(sudo -u $SUDO_USER kind get clusters 2>/dev/null | wc -l)
 if [ "${kind_clusters:-0}" -gt 0 ]; then
-    cluster_list=$(sudo -u $SUDO_USER kind get clusters 2>/dev/null | tr '\n' ' ')
-    print_status "OK" "Kind clusters found: $cluster_list"
+    add_result "PASS" "Kind Clusters Available"
     
     # Check current context
     current_context=$(sudo -u $SUDO_USER kubectl config current-context 2>/dev/null || echo "none")
     if echo "$current_context" | grep -q "kind"; then
-        print_status "OK" "  Active context: $current_context"
+        add_result "PASS" "Kind Context Active"
     else
-        print_status "WARNING" "  Current context not kind: $current_context"
+        add_result "FAIL" "Kind Context Active" "Current context is not a kind cluster: $current_context"
     fi
 else
-    print_status "WARNING" "No kind clusters found - run setup.sh to create cluster"
+    add_result "FAIL" "Kind Clusters Available" "No kind clusters found"
 fi
 
-# Additional audit rules diagnostic
+# Output Results
 echo ""
-echo "=== Diagnostic Information ==="
-echo "Audit rules files present:"
-if [ -d "/etc/audit/rules.d" ]; then
-    ls -la /etc/audit/rules.d/ | grep kubelab | while read -r line; do
-        print_status "INFO" "  $line"
+echo "Security Check Results"
+echo "====================="
+echo ""
+
+# Display passed checks
+if [ ${#PASSED_CHECKS[@]} -gt 0 ]; then
+    echo "PASSED (${#PASSED_CHECKS[@]}):"
+    for check in "${PASSED_CHECKS[@]}"; do
+        echo "  [PASS] $check"
     done
-    if [ ! -f "/etc/audit/rules.d/99-kubelab-container.rules" ]; then
-        print_status "WARNING" "  99-kubelab-container.rules missing - re-run setup.sh"
-    fi
-else
-    print_status "ERROR" "  /etc/audit/rules.d directory missing"
+    echo ""
 fi
 
-echo ""
-echo "Falco rules directory contents:"
-if [ -d "/etc/falco/rules.d" ]; then
-    ls -la /etc/falco/rules.d/ | while read -r line; do
-        print_status "INFO" "  $line"
+# Display failed checks
+if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
+    echo "FAILED (${#FAILED_CHECKS[@]}):"
+    for failed in "${FAILED_CHECKS[@]}"; do
+        check_name="${failed%%|*}"
+        details="${failed##*|}"
+        echo "  [FAIL] $check_name"
+        if [ "$details" != "$check_name" ]; then
+            echo "         $details"
+        fi
     done
-else
-    print_status "WARNING" "  /etc/falco/rules.d directory missing"
+    echo ""
 fi
 
-echo ""
-echo "=== Summary ==="
-echo "Security monitoring components status checked."
-echo "Run with 'sudo' for full system access verification."
+# Summary
+total_checks=$((${#PASSED_CHECKS[@]} + ${#FAILED_CHECKS[@]}))
+echo "Summary: ${#PASSED_CHECKS[@]}/$total_checks checks passed"
 
-echo ""
-echo "=== Quick Fixes for Common Issues ==="
-echo ""
-print_status "INFO" "Kubernetes access issues:"
-echo "  sudo cp /root/.kube/config ~/.kube/config"
-echo "  sudo chown \$(id -u):\$(id -g) ~/.kube/config"
-echo ""
-print_status "INFO" "Docker group membership:"
-echo "  sudo usermod -aG docker \$USER"
-echo "  newgrp docker  # or log out and back in"
-echo ""
-print_status "INFO" "Missing audit rules:"
-echo "  sudo cp resources/99-kubelab-container.rules /etc/audit/rules.d/"
-echo "  sudo augenrules --load"
-echo "  sudo systemctl restart auditd"
-echo "  # If rules fail to load, check: sudo auditctl -l"
-echo "  # Debug rule issues: sudo augenrules --check"
-echo ""
-print_status "INFO" "AIDE database initialization:"
-echo "  sudo aideinit"
-echo ""
-echo "=== Detailed Logs ==="
-echo "Check individual service logs for detailed troubleshooting:"
-echo "  - Falco: journalctl -u falco -f"
-echo "  - Audit: tail -f /var/log/audit/audit.log"
-echo "  - Docker: journalctl -u docker -f"
-echo "  - Kind: kind get clusters && kubectl cluster-info"
+if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
+    exit 1
+else
+    echo "All security checks passed successfully"
+    exit 0
+fi
