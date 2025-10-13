@@ -169,34 +169,326 @@ else
 fi
 
 ###
-### Install Falco (optional - non-blocking)
+### Install and configure Falco runtime security
 ###
-echo "Installing Falco runtime security..."
-if kubectl get ns falco >/dev/null 2>&1; then
-    echo "✓ Falco already installed"
-else
-    helm repo add falcosecurity https://falcosecurity.github.io/charts 2>/dev/null || true
-    helm repo update 2>/dev/null || true
+echo "Installing Falco runtime security monitoring..."
+
+# Install Falco GPG key and repository
+curl -fsSL https://falco.org/repo/falcosecurity-packages.asc | gpg --dearmor -o /usr/share/keyrings/falco-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/falco-archive-keyring.gpg] https://download.falco.org/packages/deb stable main" > /etc/apt/sources.list.d/falcosecurity.list
+
+# Update package list and install Falco
+apt-get update >/dev/null 2>&1
+apt-get install -y --no-install-recommends falco 2>/dev/null || echo "⚠ Falco installation may have failed"
+
+# Create custom Kubernetes rules for container security
+custom_rules="/etc/falco/k8s_security_rules.yaml"
+if [ ! -f "$custom_rules" ]; then
+    cat > "$custom_rules" <<'EOF'
+# KubeLab Custom Kubernetes Security Rules
+
+- rule: Container Escape Attempt via Privileged Container
+  desc: Detect potential container escape attempts through privileged containers
+  condition: >
+    spawned_process and container and 
+    (proc.name in (nsenter, unshare, capsh, chroot, pivot_root) or
+     proc.args contains "privileged" or
+     proc.args contains "--cap-add")
+  output: "Container escape attempt detected (user=%user.name command=%proc.cmdline container=%container.id image=%container.image.repository)"
+  priority: CRITICAL
+  tags: [container_escape, privilege_escalation]
+
+- rule: Mount Sensitive Host Path in Container
+  desc: Detect mounting of sensitive host paths into containers
+  condition: >
+    spawned_process and container and
+    (proc.args contains "/etc" or
+     proc.args contains "/proc" or
+     proc.args contains "/sys" or
+     proc.args contains "/var/run/docker.sock" or
+     proc.args contains "/dev")
+  output: "Sensitive host path mounted in container (user=%user.name command=%proc.cmdline container=%container.id path=%proc.args)"
+  priority: HIGH
+  tags: [host_mount, privilege_escalation]
+
+- rule: Container Process with Suspicious Network Activity
+  desc: Detect containers making suspicious network connections
+  condition: >
+    inbound_outbound and container and
+    (fd.sport in (22, 23, 135, 139, 445, 1433, 1521, 3306, 3389, 5432, 5984, 6379, 8086, 9200, 11211, 27017) or
+     fd.dport in (22, 23, 135, 139, 445, 1433, 1521, 3306, 3389, 5432, 5984, 6379, 8086, 9200, 11211, 27017))
+  output: "Suspicious network activity from container (user=%user.name command=%proc.cmdline container=%container.id proto=%fd.l4proto src=%fd.cip sport=%fd.cport dst=%fd.sip dport=%fd.sport)"
+  priority: MEDIUM
+  tags: [network, lateral_movement]
+
+- rule: Container File Access to Host Filesystem
+  desc: Detect container processes accessing host filesystem outside expected paths
+  condition: >
+    open_read and container and
+    fd.name startswith /host and
+    not fd.name startswith /host/proc and
+    not fd.name startswith /host/sys
+  output: "Container accessing host filesystem (user=%user.name command=%proc.cmdline container=%container.id file=%fd.name)"
+  priority: HIGH
+  tags: [host_access, file_access]
+
+- rule: Kubernetes Secret Access
+  desc: Detect processes accessing Kubernetes secrets
+  condition: >
+    open_read and
+    fd.name contains "/var/run/secrets/kubernetes.io/"
+  output: "Kubernetes secret accessed (user=%user.name command=%proc.cmdline file=%fd.name container=%container.id)"
+  priority: MEDIUM
+  tags: [secrets, kubernetes]
+
+- rule: Container Running with Excessive Privileges
+  desc: Detect containers running with dangerous capabilities
+  condition: >
+    spawned_process and container and
+    (proc.args contains "SYS_ADMIN" or
+     proc.args contains "SYS_PTRACE" or
+     proc.args contains "SYS_MODULE" or
+     proc.args contains "DAC_OVERRIDE" or
+     proc.args contains "SETUID" or
+     proc.args contains "SETGID")
+  output: "Container running with excessive privileges (user=%user.name command=%proc.cmdline container=%container.id capabilities=%proc.args)"
+  priority: HIGH
+  tags: [capabilities, privilege_escalation]
+EOF
+fi
+
+# Configure Falco for container monitoring
+falco_config="/etc/falco/falco.yaml"
+if [ -f "$falco_config" ]; then
+    # Backup original config
+    cp "$falco_config" "${falco_config}.bak" 2>/dev/null || true
     
-    if helm install falco falcosecurity/falco \
-        --namespace falco \
-        --create-namespace \
-        --set falco.driver.kind=ebpf \
-        --wait --timeout=300s 2>/dev/null; then
-        echo "✓ Falco installed"
-    else
-        echo "⚠ Falco installation failed (continuing without it)"
+    # Update Falco configuration for enhanced monitoring
+    sed -i 's/^json_output: false$/json_output: true/' "$falco_config" 2>/dev/null || true
+    sed -i 's/^buffered_outputs: false$/buffered_outputs: true/' "$falco_config" 2>/dev/null || true
+    
+    # Enable custom rules
+    if ! grep -q "k8s_security_rules.yaml" "$falco_config" 2>/dev/null; then
+        sed -i '/rules_file:/a\  - /etc/falco/k8s_security_rules.yaml' "$falco_config" 2>/dev/null || true
     fi
 fi
 
+# Create Falco systemd service override for better logging
+falco_override_dir="/etc/systemd/system/falco.service.d"
+mkdir -p "$falco_override_dir"
+cat > "$falco_override_dir/override.conf" <<'EOF'
+[Service]
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=falco
+EOF
+
+# Enable and start Falco
+systemctl daemon-reload
+systemctl enable falco 2>/dev/null || true
+systemctl start falco 2>/dev/null || true
+
+# Verify Falco is running
+if systemctl is-active --quiet falco; then
+    echo "✓ Falco runtime security monitoring is active"
+else
+    echo "⚠ Falco may not be running properly - check 'systemctl status falco'"
+fi
+
 ###
-### Install basic audit tools
+### Install comprehensive security monitoring
 ###
-echo "Installing audit tools..."
-apt-get install -y --no-install-recommends auditd aide 2>/dev/null || echo "⚠ Some audit tools may not be available"
+echo "Installing comprehensive security monitoring..."
+
+# Install audit and security tools
+apt-get install -y --no-install-recommends auditd audispd-plugins aide \
+    strace ltrace tcpdump netstat-nat lsof psmisc procps sysstat htop 2>/dev/null || echo "⚠ Some tools may not be available"
+
+# Configure auditd
 systemctl enable auditd 2>/dev/null || true
 systemctl start auditd 2>/dev/null || true
-echo "✓ Audit tools configured"
+
+# Initialize AIDE database
+if [ ! -f /var/lib/aide/aide.db ]; then
+    echo "Initializing AIDE database (this may take a few minutes)..."
+    /usr/bin/aideinit >/dev/null 2>&1 || echo "⚠ AIDE initialization failed"
+    if [ -f /var/lib/aide/aide.db.new ]; then
+        mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+    fi
+fi
+
+# Create comprehensive audit rules
+audit_rule="/etc/audit/rules.d/99-kubelab-container.rules"
+if [ ! -f "${audit_rule}" ]; then
+    cat > "${audit_rule}" <<'EOF'
+# KubeLab Container Security Audit Rules
+
+# Monitor Docker daemon and socket access
+-w /var/lib/docker/ -p wa -k kubelab_docker
+-w /run/docker.sock -p rw -k kubelab_docker_sock
+-w /usr/bin/docker -p x -k kubelab_docker_exec
+
+# Monitor container runtime
+-w /usr/bin/containerd -p x -k kubelab_containerd
+-w /usr/bin/runc -p x -k kubelab_runc
+
+# Monitor Kubernetes components
+-w /usr/local/bin/kubectl -p x -k kubelab_kubectl
+-w /usr/local/bin/kind -p x -k kubelab_kind
+
+# Monitor sensitive system calls that could indicate container escapes
+-a always,exit -F arch=b64 -S mount,umount2 -k kubelab_mount
+-a always,exit -F arch=b64 -S unshare,setns -k kubelab_namespace
+-a always,exit -F arch=b64 -S ptrace -k kubelab_ptrace
+-a always,exit -F arch=b64 -S personality -k kubelab_personality
+
+# Monitor capability changes
+-a always,exit -F arch=b64 -S capset -k kubelab_capabilities
+
+# Monitor privileged operations
+-a always,exit -F arch=b64 -S chroot -k kubelab_chroot
+-a always,exit -F arch=b64 -S pivot_root -k kubelab_pivot_root
+
+# Monitor process execution in containers (when possible)
+-a always,exit -F arch=b64 -S execve -F exe=/proc/*/root/* -k kubelab_container_exec
+EOF
+
+    # Load audit rules
+    augenrules --load >/dev/null 2>&1 || echo "⚠ Failed to load audit rules"
+    systemctl restart auditd >/dev/null 2>&1 || echo "⚠ Failed to restart auditd"
+fi
+
+# Configure system security limits
+limits_file="/etc/security/limits.d/99-kubelab.conf"
+if [ ! -f "$limits_file" ]; then
+    cat > "$limits_file" <<'EOF'
+# KubeLab Security Limits
+
+# Limit core dumps for security
+* soft core 0
+* hard core 0
+
+# Process limits
+* soft nproc 65536
+* hard nproc 65536
+
+# File descriptor limits  
+* soft nofile 65536
+* hard nofile 65536
+
+# Memory limits for user processes
+* soft as unlimited
+* hard as unlimited
+EOF
+fi
+
+# Configure core dump security
+if ! grep -q "kernel.core_pattern" /etc/sysctl.conf 2>/dev/null; then
+    echo "# KubeLab core dump security" >> /etc/sysctl.conf
+    echo "kernel.core_pattern=|/bin/false" >> /etc/sysctl.conf
+    echo "fs.suid_dumpable=0" >> /etc/sysctl.conf
+    sysctl -p >/dev/null 2>&1 || true
+fi
+
+# Set up log rotation
+logrotate_file="/etc/logrotate.d/kubelab"
+if [ ! -f "$logrotate_file" ]; then
+    cat > "$logrotate_file" <<'EOF'
+/var/log/audit/audit.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 root root
+}
+EOF
+fi
+
+echo "✓ Security monitoring configured"
+
+###
+### Final security configuration and testing
+###
+echo "Completing security configuration..."
+
+# Create security monitoring script
+security_script="/usr/local/bin/kubelab-security-check"
+cat > "$security_script" <<'EOF'
+#!/bin/bash
+# KubeLab Security Status Check
+
+echo "=== KubeLab Security Monitoring Status ==="
+echo
+
+echo "Docker Service:"
+systemctl is-active docker 2>/dev/null || echo "Not running"
+
+echo "Kind Cluster:"
+sudo -u $SUDO_USER kubectl get nodes 2>/dev/null | head -2 || echo "Not accessible"
+
+echo "Falco Runtime Security:"
+systemctl is-active falco 2>/dev/null || echo "Not running"
+
+echo "Audit Daemon:"
+systemctl is-active auditd 2>/dev/null || echo "Not running"
+
+echo "AIDE Database:"
+if [ -f /var/lib/aide/aide.db ]; then
+    echo "Initialized"
+else
+    echo "Not initialized"
+fi
+
+echo "Custom Audit Rules:"
+if [ -f /etc/audit/rules.d/99-kubelab-container.rules ]; then
+    echo "Configured"
+else
+    echo "Missing"
+fi
+
+echo
+echo "=== Recent Security Events ==="
+echo "Recent Falco alerts:"
+journalctl -u falco --since "5 minutes ago" -n 5 --no-pager 2>/dev/null | grep -i "priority\|rule" || echo "No recent alerts"
+
+echo
+echo "Recent audit events:"
+ausearch -ts recent -k kubelab 2>/dev/null | tail -5 || echo "No recent audit events"
+EOF
+
+chmod +x "$security_script"
+
+# Test basic functionality
+if command -v docker >/dev/null 2>&1; then
+    echo "✓ Docker available"
+else
+    echo "⚠ Docker not found in PATH"
+fi
+
+if command -v kubectl >/dev/null 2>&1; then
+    echo "✓ kubectl available"
+else
+    echo "⚠ kubectl not found in PATH"
+fi
+
+if command -v kind >/dev/null 2>&1; then
+    echo "✓ kind available"
+else
+    echo "⚠ kind not found in PATH"
+fi
+
+# Create summary of installed security components
+echo
+echo "=== Security Monitoring Components Installed ==="
+echo "✓ Falco runtime security with custom K8s rules"
+echo "✓ auditd with container-specific audit rules"  
+echo "✓ AIDE file integrity monitoring"
+echo "✓ System security limits and core dump protection"
+echo "✓ Enhanced logging and monitoring tools"
+echo "✓ Security status check script: /usr/local/bin/kubelab-security-check"
+echo
 
 ###
 ### Final verification
@@ -225,12 +517,16 @@ echo "├─ kubectl: $(kubectl version --client 2>/dev/null | grep -o 'GitVersi
 echo "├─ kind: $(kind --version)"
 echo "├─ Helm: $(helm version 2>/dev/null | grep -o 'Version:"[^"]*"' | cut -d'"' -f2)"
 echo "├─ Kubernetes cluster: $(kubectl config current-context)"
-echo "└─ Vulnerable lab: ${VULN_REPO_DIR}"
+echo "├─ Vulnerable lab: ${VULN_REPO_DIR}"
+echo "├─ Falco runtime security: $(systemctl is-active falco 2>/dev/null || echo 'inactive')"
+echo "├─ auditd monitoring: $(systemctl is-active auditd 2>/dev/null || echo 'inactive')"
+echo "└─ AIDE file integrity: $([ -f /var/lib/aide/aide.db ] && echo 'initialized' || echo 'pending')"
 echo ""
 echo "Next steps:"
 echo "1. Log out and back in (or run: newgrp docker)"
 echo "2. Verify: kubectl get nodes"
 echo "3. Deploy lab: kubectl apply -f ${VULN_REPO_DIR}/deploy/"
+echo "4. Check security: /usr/local/bin/kubelab-security-check"
 echo ""
 echo "If kubectl shows connection refused errors:"
 echo "   sudo cp /root/.kube/config ~/.kube/config"
