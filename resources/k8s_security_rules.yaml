@@ -1,65 +1,64 @@
 # Detailed Falco rules for container escape and suspicious activity
 
-rules:
-  - rule: shell_in_container
-    desc: notice shell activity within a container
-    condition: >
-      evt.type = execve and
-      evt.dir = < and
-      container.id != host and
-      (proc.name = bash or proc.name = sh or proc.name = ksh)
-    output: >
-      shell in container |
-      user=%user.name container_id=%container.id container_name=%container.name 
-      shell=%proc.name parent=%proc.pname cmdline=%proc.cmdline
-    priority: WARNING
+- rule: shell_in_container
+  desc: notice shell activity within a container
+  condition: >
+    evt.type = execve and
+    evt.dir = < and
+    container.id != host and
+    (proc.name = bash or proc.name = sh or proc.name = ksh)
+  output: >
+    shell in container |
+    user=%user.name container_id=%container.id container_name=%container.name 
+    shell=%proc.name parent=%proc.pname cmdline=%proc.cmdline
+  priority: WARNING
 
-  - rule: write_to_host
-    desc: container writing to host filesystem
-    condition: >
-      container.id != host and
-      evt.type in (open, openat) and
-      fd.name startswith "/host" or fd.name startswith "/etc"
-    output: >
-      container writing to sensitive host path |
-      user=%user.name container_id=%container.id container_name=%container.name
-      file=%fd.name cmdline=%proc.cmdline
-    priority: CRITICAL
+- rule: write_to_host
+  desc: container writing to host filesystem
+  condition: >
+    container.id != host and
+    evt.type in (open, openat) and
+    fd.name startswith "/host" or fd.name startswith "/etc"
+  output: >
+    container writing to sensitive host path |
+    user=%user.name container_id=%container.id container_name=%container.name
+    file=%fd.name cmdline=%proc.cmdline
+  priority: CRITICAL
 
-  - rule: docker_socket_access
-    desc: container accessing host Docker socket
-    condition: >
-      container.id != host and
-      fd.name="/var/run/docker.sock"
-    output: >
-      container accessing docker.sock |
-      user=%user.name container_id=%container.id container_name=%container.name
-      cmdline=%proc.cmdline
-    priority: CRITICAL
+- rule: docker_socket_access
+  desc: container accessing host Docker socket
+  condition: >
+    container.id != host and
+    fd.name="/var/run/docker.sock"
+  output: >
+    container accessing docker.sock |
+    user=%user.name container_id=%container.id container_name=%container.name
+    cmdline=%proc.cmdline
+  priority: CRITICAL
 
-  - rule: privileged_container
-    desc: privileged container detected
-    condition: container.id != host and container.privileged = true
-    output: >
-      privileged container detected |
-      user=%user.name container_id=%container.id container_name=%container.name
-      cmdline=%proc.cmdline
-    priority: CRITICAL
+- rule: privileged_container
+  desc: privileged container detected
+  condition: container.id != host and container.privileged = true
+  output: >
+    privileged container detected |
+    user=%user.name container_id=%container.id container_name=%container.name
+    cmdline=%proc.cmdline
+  priority: CRITICAL
 
-  - rule: suspicious_capabilities
-    desc: container adding capabilities
-    condition: container.id != host and evt.type=capset
-    output: >
-      container added capabilities |
-      user=%user.name container_id=%container.id container_name=%container.name
-      cmdline=%proc.cmdline
-    priority: WARNING
+- rule: suspicious_capabilities
+  desc: container adding capabilities
+  condition: container.id != host and evt.type=capset
+  output: >
+    container added capabilities |
+    user=%user.name container_id=%container.id container_name=%container.name
+    cmdline=%proc.cmdline
+  priority: WARNING
 
-  - rule: proc_mount_escape
-    desc: container accessing host /proc
-    condition: container.id != host and fd.name startswith "/proc"
-    output: >
-      container accessing host /proc |
-      user=%user.name container_id=%container.id container_name=%container.name
-      file=%fd.name cmdline=%proc.cmdline
-    priority: CRITICAL
+- rule: proc_mount_escape
+  desc: container accessing host /proc
+  condition: container.id != host and fd.name startswith "/proc"
+  output: >
+    container accessing host /proc |
+    user=%user.name container_id=%container.id container_name=%container.name
+    file=%fd.name cmdline=%proc.cmdline
+  priority: CRITICAL
