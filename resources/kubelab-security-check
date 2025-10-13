@@ -76,8 +76,8 @@ if check_service "falco" "" >/dev/null 2>&1; then
     if [ -f "/etc/falco/rules.d/k8s_security_rules.yaml" ]; then
         print_status "OK" "  Custom K8s security rules deployed"
         # Count custom rules
-        rule_count=$(grep -c "^- rule:" /etc/falco/rules.d/k8s_security_rules.yaml 2>/dev/null || echo "0")
-        print_status "INFO" "  Custom rules count: $rule_count"
+        rule_count=$(grep -c "^- rule:" /etc/falco/rules.d/k8s_security_rules.yaml 2>/dev/null)
+        print_status "INFO" "  Custom rules count: ${rule_count:-0}"
     else
         print_status "ERROR" "  Custom rules file missing"
     fi
@@ -85,8 +85,11 @@ if check_service "falco" "" >/dev/null 2>&1; then
     # Check if custom rules are loaded in config
     if grep -q "/etc/falco/rules.d/k8s_security_rules.yaml" /etc/falco/falco.yaml 2>/dev/null; then
         print_status "OK" "  Custom rules referenced in config"
+    elif grep -q "rules.d" /etc/falco/falco.yaml 2>/dev/null; then
+        print_status "OK" "  Rules directory referenced in config"
     else
         print_status "WARNING" "  Custom rules not referenced in config"
+        print_status "INFO" "  Note: Falco may auto-load rules.d directory"
     fi
     
     # Check systemd override
@@ -113,15 +116,15 @@ if check_service "auditd" "" >/dev/null 2>&1; then
     # Check custom audit rules
     if [ -f "/etc/audit/rules.d/99-kubelab-container.rules" ]; then
         print_status "OK" "  Custom container audit rules deployed"
-        rule_count=$(grep -c "^-" /etc/audit/rules.d/99-kubelab-container.rules 2>/dev/null || echo "0")
-        print_status "INFO" "  Audit rules count: $rule_count"
+        rule_count=$(grep -c "^-" /etc/audit/rules.d/99-kubelab-container.rules 2>/dev/null)
+        print_status "INFO" "  Audit rules count: ${rule_count:-0}"
     else
         print_status "ERROR" "  Custom audit rules missing"
     fi
     
     # Check if rules are loaded
-    loaded_rules=$(auditctl -l 2>/dev/null | grep -c "kubelab" || echo "0")
-    if [ "$loaded_rules" -gt 0 ]; then
+    loaded_rules=$(auditctl -l 2>/dev/null | grep "kubelab" | wc -l)
+    if [ "${loaded_rules:-0}" -gt 0 ]; then
         print_status "OK" "  KubeLab audit rules loaded ($loaded_rules active)"
     else
         print_status "WARNING" "  No KubeLab audit rules currently loaded"
@@ -234,8 +237,16 @@ echo "=== Configuration Validation ==="
 echo -n "Kubernetes API Access: "
 if sudo -u $SUDO_USER kubectl auth can-i get pods >/dev/null 2>&1; then
     print_status "OK" "User has cluster access"
+elif sudo -u $SUDO_USER kubectl cluster-info >/dev/null 2>&1; then
+    print_status "OK" "Cluster is accessible"
 else
     print_status "WARNING" "User may not have proper cluster access"
+    # Additional troubleshooting info
+    if [ -f "/home/$SUDO_USER/.kube/config" ]; then
+        print_status "INFO" "  User kubeconfig exists"
+    else
+        print_status "WARNING" "  User kubeconfig missing - try: sudo cp /root/.kube/config ~/.kube/config && sudo chown \$(id -u):\$(id -g) ~/.kube/config"
+    fi
 fi
 
 # Check Docker group membership
@@ -243,23 +254,79 @@ echo -n "Docker Group Membership: "
 if groups $SUDO_USER 2>/dev/null | grep -q docker; then
     print_status "OK" "User in docker group"
 else
-    print_status "WARNING" "User not in docker group"
+    print_status "WARNING" "User not in docker group - run: sudo usermod -aG docker $SUDO_USER (then log out/in)"
 fi
 
 # Check kind cluster details
 echo -n "Kind Cluster Details: "
-if sudo -u $SUDO_USER kubectl config current-context 2>/dev/null | grep -q "kind"; then
-    cluster_name=$(sudo -u $SUDO_USER kubectl config current-context 2>/dev/null)
-    print_status "OK" "Active context: $cluster_name"
+kind_clusters=$(sudo -u $SUDO_USER kind get clusters 2>/dev/null | wc -l)
+if [ "${kind_clusters:-0}" -gt 0 ]; then
+    cluster_list=$(sudo -u $SUDO_USER kind get clusters 2>/dev/null | tr '\n' ' ')
+    print_status "OK" "Kind clusters found: $cluster_list"
+    
+    # Check current context
+    current_context=$(sudo -u $SUDO_USER kubectl config current-context 2>/dev/null || echo "none")
+    if echo "$current_context" | grep -q "kind"; then
+        print_status "OK" "  Active context: $current_context"
+    else
+        print_status "WARNING" "  Current context not kind: $current_context"
+    fi
 else
-    print_status "WARNING" "Not using kind cluster or context issues"
+    print_status "WARNING" "No kind clusters found - run setup.sh to create cluster"
+fi
+
+# Additional audit rules diagnostic
+echo ""
+echo "=== Diagnostic Information ==="
+echo "Audit rules files present:"
+if [ -d "/etc/audit/rules.d" ]; then
+    ls -la /etc/audit/rules.d/ | grep kubelab | while read -r line; do
+        print_status "INFO" "  $line"
+    done
+    if [ ! -f "/etc/audit/rules.d/99-kubelab-container.rules" ]; then
+        print_status "WARNING" "  99-kubelab-container.rules missing - re-run setup.sh"
+    fi
+else
+    print_status "ERROR" "  /etc/audit/rules.d directory missing"
+fi
+
+echo ""
+echo "Falco rules directory contents:"
+if [ -d "/etc/falco/rules.d" ]; then
+    ls -la /etc/falco/rules.d/ | while read -r line; do
+        print_status "INFO" "  $line"
+    done
+else
+    print_status "WARNING" "  /etc/falco/rules.d directory missing"
 fi
 
 echo ""
 echo "=== Summary ==="
 echo "Security monitoring components status checked."
 echo "Run with 'sudo' for full system access verification."
+
+echo ""
+echo "=== Quick Fixes for Common Issues ==="
+echo ""
+print_status "INFO" "Kubernetes access issues:"
+echo "  sudo cp /root/.kube/config ~/.kube/config"
+echo "  sudo chown \$(id -u):\$(id -g) ~/.kube/config"
+echo ""
+print_status "INFO" "Docker group membership:"
+echo "  sudo usermod -aG docker \$USER"
+echo "  newgrp docker  # or log out and back in"
+echo ""
+print_status "INFO" "Missing audit rules:"
+echo "  sudo cp resources/99-kubelab-container.rules /etc/audit/rules.d/"
+echo "  sudo augenrules --load"
+echo "  sudo systemctl restart auditd"
+echo ""
+print_status "INFO" "AIDE database initialization:"
+echo "  sudo aideinit"
+echo ""
+echo "=== Detailed Logs ==="
 echo "Check individual service logs for detailed troubleshooting:"
 echo "  - Falco: journalctl -u falco -f"
 echo "  - Audit: tail -f /var/log/audit/audit.log"
 echo "  - Docker: journalctl -u docker -f"
+echo "  - Kind: kind get clusters && kubectl cluster-info"
