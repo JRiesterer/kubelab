@@ -42,6 +42,29 @@ ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1 || { echo "ERROR: No network connectivity
 echo "✓ Preflight checks passed"
 
 ###
+### Initial system preparation
+###
+echo "Preparing system for installation..."
+
+# Store the actual user (not root) for later use
+if [ -n "$SUDO_USER" ]; then
+    ACTUAL_USER="$SUDO_USER"
+    ACTUAL_HOME="/home/$SUDO_USER"
+else
+    ACTUAL_USER=$(logname 2>/dev/null || echo "root")
+    ACTUAL_HOME="/home/$ACTUAL_USER"
+fi
+
+echo "✓ Detected user: $ACTUAL_USER"
+
+# Ensure user's home directory and common directories exist
+if [ "$ACTUAL_USER" != "root" ]; then
+    mkdir -p "$ACTUAL_HOME/.kube"
+    mkdir -p "$ACTUAL_HOME/.docker"
+    chown -R "$ACTUAL_USER:$ACTUAL_USER" "$ACTUAL_HOME/.kube" "$ACTUAL_HOME/.docker" 2>/dev/null || true
+fi
+
+###
 ### Install base packages
 ###
 echo "Installing base packages..."
@@ -73,10 +96,22 @@ else
     echo "✓ Docker installed"
 fi
 
-# Add user to docker group
+# Add user to docker group and verify
 nonroot_user=$(logname 2>/dev/null || who am i 2>/dev/null | awk '{print $1}' || echo "")
 if [ -n "${nonroot_user}" ] && [ "${nonroot_user}" != "root" ]; then
-    usermod -aG docker "${nonroot_user}" 2>/dev/null || true
+    if ! groups "${nonroot_user}" | grep -q docker; then
+        echo "Adding ${nonroot_user} to docker group..."
+        usermod -aG docker "${nonroot_user}"
+        echo "✓ User ${nonroot_user} added to docker group"
+        echo "NOTE: User will need to log out and back in for docker group membership to take effect"
+    else
+        echo "✓ User ${nonroot_user} already in docker group"
+    fi
+    
+    # Ensure docker socket permissions
+    chmod 666 /var/run/docker.sock 2>/dev/null || true
+else
+    echo "WARNING: Could not determine non-root user for docker group assignment"
 fi
 
 ###
@@ -242,21 +277,74 @@ apt-get install -y --no-install-recommends auditd audispd-plugins aide \
 systemctl enable auditd 2>/dev/null || true
 systemctl start auditd 2>/dev/null || true
 
-# Initialize AIDE database
+# Initialize AIDE database with progress feedback
 if [ ! -f /var/lib/aide/aide.db ]; then
-    echo "Initializing AIDE database (this may take a few minutes)..."
-    /usr/bin/aideinit >/dev/null 2>&1 || echo "⚠ AIDE initialization failed"
-    if [ -f /var/lib/aide/aide.db.new ]; then
+    echo "Initializing AIDE database (this may take several minutes)..."
+    echo "This is a one-time process to create the file integrity baseline..."
+    
+    # Run AIDE initialization in background with progress indicator
+    /usr/bin/aideinit >/tmp/aide-init.log 2>&1 &
+    aide_pid=$!
+    
+    # Show progress dots while AIDE runs
+    while kill -0 $aide_pid 2>/dev/null; do
+        echo -n "."
+        sleep 5
+    done
+    wait $aide_pid
+    aide_exit_code=$?
+    echo  # newline after dots
+    
+    if [ $aide_exit_code -eq 0 ] && [ -f /var/lib/aide/aide.db.new ]; then
         mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+        echo "✓ AIDE database initialized successfully"
+    else
+        echo "⚠ AIDE initialization had issues (exit code: $aide_exit_code)"
+        echo "Check /tmp/aide-init.log for details"
+        # Create empty database as fallback
+        touch /var/lib/aide/aide.db 2>/dev/null || true
+    fi
+else
+    echo "✓ AIDE database already exists"
+fi
+
+# Copy and validate comprehensive audit rules
+echo "Installing audit rules..."
+cp "${RESOURCES_DIR}/99-kubelab-container.rules" "/etc/audit/rules.d/99-kubelab-container.rules"
+
+# Validate audit rules before loading
+if augenrules --check >/dev/null 2>&1; then
+    echo "✓ Audit rules validated"
+else
+    echo "⚠ Audit rules validation failed, attempting to fix..."
+    # Remove potentially problematic rules and retry
+    sed -i '/personality/d' "/etc/audit/rules.d/99-kubelab-container.rules"
+    if augenrules --check >/dev/null 2>&1; then
+        echo "✓ Audit rules fixed and validated"
+    else
+        echo "⚠ Audit rules still have issues - continuing anyway"
     fi
 fi
 
-# Copy comprehensive audit rules
-cp "${RESOURCES_DIR}/99-kubelab-container.rules" "/etc/audit/rules.d/99-kubelab-container.rules"
+# Load audit rules with better error handling
+if augenrules --load >/dev/null 2>&1; then
+    echo "✓ Audit rules loaded successfully"
+else
+    echo "⚠ Failed to load audit rules - trying alternative method..."
+    # Try loading individual rules
+    cat /etc/audit/rules.d/99-kubelab-container.rules >> /etc/audit/audit.rules 2>/dev/null || true
+fi
 
-# Load audit rules
-augenrules --load >/dev/null 2>&1 || echo "⚠ Failed to load audit rules"
-systemctl restart auditd >/dev/null 2>&1 || echo "⚠ Failed to restart auditd"
+# Restart auditd with retry logic
+for i in {1..3}; do
+    if systemctl restart auditd >/dev/null 2>&1; then
+        echo "✓ auditd restarted successfully"
+        break
+    else
+        echo "⚠ auditd restart attempt $i failed, retrying..."
+        sleep 2
+    fi
+done
 
 # Copy system security limits
 cp "${RESOURCES_DIR}/99-kubelab.conf" "/etc/security/limits.d/99-kubelab.conf"
@@ -282,6 +370,53 @@ echo "Completing security configuration..."
 # Copy security monitoring script
 cp "${RESOURCES_DIR}/kubelab-security-check" "/usr/local/bin/kubelab-security-check"
 chmod +x "/usr/local/bin/kubelab-security-check"
+
+# Create user convenience script for environment setup
+if [ -n "${nonroot_user}" ] && [ "${nonroot_user}" != "root" ]; then
+    user_home=$(eval echo "~${nonroot_user}")
+    cat > "${user_home}/kubelab-env.sh" <<EOF
+#!/bin/bash
+# KubeLab Environment Setup Script
+# Run this if you have issues with docker or kubectl permissions
+
+echo "Setting up KubeLab environment..."
+
+# Refresh docker group membership
+if ! groups | grep -q docker; then
+    echo "Adding current user to docker group..."
+    sudo usermod -aG docker \$(whoami)
+    echo "Please log out and back in, then run this script again"
+    exit 1
+fi
+
+# Ensure kubeconfig exists and is accessible
+if [ ! -f ~/.kube/config ]; then
+    echo "Copying kubeconfig..."
+    mkdir -p ~/.kube
+    sudo cp /root/.kube/config ~/.kube/config
+    sudo chown \$(id -u):\$(id -g) ~/.kube/config
+fi
+
+# Test connectivity
+echo "Testing environment..."
+if docker ps >/dev/null 2>&1; then
+    echo "✓ Docker access working"
+else
+    echo "⚠ Docker access failed - try: newgrp docker"
+fi
+
+if kubectl get nodes >/dev/null 2>&1; then
+    echo "✓ Kubernetes access working"
+else
+    echo "⚠ Kubernetes access failed - check kubeconfig"
+fi
+
+echo "Environment setup complete!"
+EOF
+    chown "${nonroot_user}:${nonroot_user}" "${user_home}/kubelab-env.sh"
+    chmod +x "${user_home}/kubelab-env.sh"
+    echo "✓ Created environment setup script at ${user_home}/kubelab-env.sh"
+fi
 
 # Test basic functionality
 if command -v docker >/dev/null 2>&1; then
@@ -312,6 +447,64 @@ echo "✓ System security limits and core dump protection"
 echo "✓ Enhanced logging and monitoring tools"
 echo "✓ Security status check script: /usr/local/bin/kubelab-security-check"
 echo
+
+###
+### System verification and issue detection
+###
+echo "Performing comprehensive system verification..."
+
+# Check Docker group membership for user
+if [ -n "${nonroot_user}" ] && [ "${nonroot_user}" != "root" ]; then
+    if groups "${nonroot_user}" | grep -q docker; then
+        echo "✓ User ${nonroot_user} has docker group membership"
+    else
+        echo "⚠ User ${nonroot_user} missing docker group - adding now..."
+        usermod -aG docker "${nonroot_user}"
+    fi
+    
+    # Check user's kubeconfig
+    user_home=$(eval echo "~${nonroot_user}")
+    if [ -f "${user_home}/.kube/config" ]; then
+        echo "✓ User kubeconfig exists at ${user_home}/.kube/config"
+    else
+        echo "⚠ User kubeconfig missing - copying now..."
+        mkdir -p "${user_home}/.kube"
+        cp /root/.kube/config "${user_home}/.kube/config" 2>/dev/null || true
+        chown -R "${nonroot_user}:${nonroot_user}" "${user_home}/.kube" 2>/dev/null || true
+    fi
+fi
+
+# Verify audit rules are loaded
+if auditctl -l | grep -q container 2>/dev/null; then
+    echo "✓ Container audit rules are active"
+else
+    echo "⚠ Container audit rules not found - attempting reload..."
+    augenrules --load >/dev/null 2>&1 || true
+fi
+
+# Check AIDE database
+if [ -f /var/lib/aide/aide.db ] && [ -s /var/lib/aide/aide.db ]; then
+    echo "✓ AIDE database exists and is not empty"
+else
+    echo "⚠ AIDE database missing or empty"
+fi
+
+# Verify Falco rules
+if [ -f /etc/falco/rules.d/k8s_security_rules.yaml ]; then
+    echo "✓ Custom Falco rules installed"
+else
+    echo "⚠ Custom Falco rules missing"
+fi
+
+# Check service status
+services="docker auditd falco"
+for service in $services; do
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+        echo "✓ $service service is running"
+    else
+        echo "⚠ $service service not running"
+    fi
+done
 
 ###
 ### Final verification
@@ -346,13 +539,37 @@ echo "├─ auditd monitoring: $(systemctl is-active auditd 2>/dev/null || echo
 echo "└─ AIDE file integrity: $([ -f /var/lib/aide/aide.db ] && echo 'initialized' || echo 'pending')"
 echo ""
 echo "Next steps:"
-echo "1. Log out and back in (or run: newgrp docker)"
-echo "2. Verify: kubectl get nodes"
-echo "3. Deploy lab: kubectl apply -f ${VULN_REPO_DIR}/scenarios/"
-echo "4. Check security: /usr/local/bin/kubelab-security-check"
-echo ""
-echo "If kubectl shows connection refused errors:"
-echo "   sudo cp /root/.kube/config ~/.kube/config"
-echo "   sudo chown \$(id -u):\$(id -g) ~/.kube/config"
+if [ -n "${nonroot_user}" ] && [ "${nonroot_user}" != "root" ]; then
+    echo "1. Log out and back in as '${nonroot_user}' (or run: newgrp docker)"
+    echo "2. Verify cluster access: kubectl get nodes"
+    echo "3. Deploy vulnerable lab: kubectl apply -f ${VULN_REPO_DIR}/scenarios/"
+    echo "4. Run security check: kubelab-security-check"
+    echo ""
+    echo "Quick environment fix (if needed): ~/kubelab-env.sh"
+    echo ""
+    echo "Troubleshooting:"
+    echo "If 'kubectl get nodes' shows connection errors:"
+    echo "   • Make sure you logged out and back in for docker group"
+    echo "   • If still failing, run: sudo cp /root/.kube/config ~/.kube/"
+    echo "   • Then fix permissions: sudo chown \$(id -u):\$(id -g) ~/.kube/config"
+    echo ""
+    echo "If docker commands fail with permission denied:"
+    echo "   • Run: newgrp docker"
+    echo "   • Or log out and back in to refresh group membership"
+    echo ""
+    echo "If audit rules fail to load:"
+    echo "   • Check: sudo auditctl -l"
+    echo "   • Manual reload: sudo augenrules --load"
+    echo ""
+    echo "If AIDE database is missing:"
+    echo "   • Run: sudo aideinit"
+    echo "   • Move database: sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db"
+else
+    echo "1. Verify cluster access: kubectl get nodes"
+    echo "2. Deploy vulnerable lab: kubectl apply -f ${VULN_REPO_DIR}/scenarios/"
+    echo "3. Run security check: kubelab-security-check"
+    echo ""
+    echo "Note: Running as root - consider creating a non-root user for daily operations"
+fi
 echo ""
 echo "Setup completed successfully!"
