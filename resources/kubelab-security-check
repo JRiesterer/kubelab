@@ -1,0 +1,40 @@
+#!/bin/bash
+# KubeLab Security Status Check
+
+echo "=== KubeLab Security Monitoring Status ==="
+echo
+
+echo "Docker Service:"
+systemctl is-active docker 2>/dev/null || echo "Not running"
+
+echo "Kind Cluster:"
+sudo -u $SUDO_USER kubectl get nodes 2>/dev/null | head -2 || echo "Not accessible"
+
+echo "Falco Runtime Security:"
+systemctl is-active falco 2>/dev/null || echo "Not running"
+
+echo "Audit Daemon:"
+systemctl is-active auditd 2>/dev/null || echo "Not running"
+
+echo "AIDE Database:"
+if [ -f /var/lib/aide/aide.db ]; then
+    echo "Initialized"
+else
+    echo "Not initialized"
+fi
+
+echo "Custom Audit Rules:"
+if [ -f /etc/audit/rules.d/99-kubelab-container.rules ]; then
+    echo "Configured"
+else
+    echo "Missing"
+fi
+
+echo
+echo "=== Recent Security Events ==="
+echo "Recent Falco alerts:"
+journalctl -u falco --since "5 minutes ago" -n 5 --no-pager 2>/dev/null | grep -i "priority\|rule" || echo "No recent alerts"
+
+echo
+echo "Recent audit events:"
+ausearch -ts recent -k kubelab 2>/dev/null | tail -5 || echo "No recent audit events"

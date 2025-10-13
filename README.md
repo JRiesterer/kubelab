@@ -36,7 +36,8 @@ The script includes special handling for git operations to eliminate user prompt
 
 ## Quick Start
 
-### Standard Setup (Recommended)
+## Quick Start
+
 ```bash
 # Clone the repository
 git clone https://github.com/JRiesterer/kubelab.git
@@ -49,13 +50,6 @@ chmod +x setup.sh
 sudo ./setup.sh
 ```
 
-### Minimal Setup (Fast, No Frills)
-```bash
-# For a minimal installation with no logging or progress bars
-chmod +x setup_minimal.sh
-sudo ./setup_minimal.sh
-```
-
 ## System Requirements
 
 - OS: Ubuntu Server 24.04.3 LTS (or compatible)
@@ -64,40 +58,22 @@ sudo ./setup_minimal.sh
 - Network: Internet connectivity required for downloads
 - Privileges: Root/sudo access required
 
-## Scripts Available
+## Installation Process
 
-### setup.sh (Full Featured)
-The main setup script with enhanced features:
-- Colored output with status indicators
-- Progress bar showing installation progress
-- Comprehensive logging to `setup.log`
-- Enhanced error handling and retry mechanisms
-- Detailed verification and final summary
+The setup script provides a streamlined, fail-fast installation:
+- Essential components only with comprehensive security monitoring
+- Direct error output to console for immediate feedback
+- Fast execution with minimal overhead
+- Comprehensive security tools and monitoring
 
-### setup_minimal.sh (Minimal)
-A streamlined version for quick setup:
-- Essential components only
-- Fail-fast behavior - stops immediately on errors
-- No logging or progress bars
-- Direct error output to console
-- Faster execution with minimal overhead
+## Installation Steps
 
-## Installation Progress
-
-### Standard Setup (setup.sh)
-
-The script provides real-time progress indication:
-
-```
-Progress: [==============------] 70% - Installing Falco security monitoring
-```
-
-Steps include:
-1. Preflight checks (OS, network, disk space)
-2. Base package installation
-3. Docker CE installation
-4. kubectl installation
-5. kind installation
+The script installs and configures:
+1. Preflight checks (OS, network, requirements)
+2. Base package installation and updates
+3. Docker CE installation and configuration
+4. kubectl installation and verification
+5. kind installation and cluster creation
 6. Helm installation
 7. Kubernetes cluster creation
 8. Vulnerable lab repository setup
@@ -121,56 +97,45 @@ The minimal script performs these essential steps:
 11. Final verification
 
 ## Configuration
+6. Helm installation and verification
+7. Vulnerable lab repository cloning (Kubernetes Goat)
+8. Falco runtime security monitoring setup
+9. Comprehensive security monitoring (auditd, AIDE)
+10. Kind cluster creation and verification
+11. Final configuration and testing
 
-Key configuration variables (edit in `setup.sh` as needed):
+## Security Monitoring Components
 
-```bash
-readonly TARGET_OS="ubuntu"
-readonly MIN_UBUNTU_MAJOR=24
-readonly INSTALL_DIR="/opt/kubelab"
-readonly VULN_REPO_URL="https://github.com/madhuakula/kubernetes-goat.git"
-readonly KIND_VERSION="v0.26.0"
-```
+The setup includes comprehensive security monitoring:
 
-## Logging
+### Falco Runtime Security
+- Custom Kubernetes security rules for container escape detection
+- Real-time monitoring of suspicious container activities
+- Integration with system logs via journald
 
-All operations are logged to `setup.log` in the current directory with:
-- Timestamps for all operations
-- Color-coded console output
-- Detailed error information
-- Command execution traces
-- Verification results
+### Audit Framework (auditd)
+- Container-specific audit rules
+- System call monitoring for privilege escalation
+- Docker and Kubernetes component monitoring
 
-Example log format:
-```
-2024-10-12T10:30:45-04:00 INFO: Step 3/10: Installing Docker CE
-2024-10-12T10:30:45-04:00 SUCCESS: Docker installed successfully
-```
+### File Integrity Monitoring (AIDE)
+- Database initialization for system file monitoring
+- Detection of unauthorized file changes
 
-## Git Clone Enhancements
+### Security Tools
+- strace, ltrace - System call tracing
+- tcpdump - Network monitoring
+- lsof, htop, psmisc - Process monitoring
+- Custom security status checking script
 
-The script handles git operations without user interaction through:
+## Configuration Files
 
-### Environment Configuration
-```bash
-export GIT_TERMINAL_PROMPT=0
-export GIT_ASKPASS=/bin/true
-export SSH_ASKPASS=/bin/true
-```
-
-### Non-Interactive Clone
-```bash
-git -c advice.detachedHead=false \
-    -c init.defaultBranch=main \
-    -c user.name="KubeLab Setup" \
-    -c user.email="setup@kubelab.local" \
-    clone --depth 1 --quiet --no-progress \
-    "$clone_url" "$target_dir"
-```
-
-### SSH to HTTPS Conversion
-Automatically converts URLs like:
-- `git@github.com:user/repo.git` → `https://github.com/user/repo.git`
+All configuration files are organized in the `resources/` directory:
+- `k8s_security_rules.yaml` - Falco custom security rules
+- `99-kubelab-container.rules` - Auditd container monitoring rules
+- `99-kubelab.conf` - System security limits
+- `kubelab-logrotate` - Log rotation configuration
+- `kubelab-security-check` - Security monitoring script
 
 ## Security Features
 
@@ -183,16 +148,6 @@ Custom audit rules monitor:
 - Capability changes
 - Container escape indicators
 
-### File Integrity Monitoring
-- AIDE database initialization
-- Baseline file system state
-- Change detection capabilities
-
-### Runtime Security
-- Falco deployment with eBPF driver
-- Real-time threat detection
-- Custom rule sets for container security
-
 ## Post-Installation
 
 After successful setup:
@@ -202,38 +157,71 @@ After successful setup:
    kubectl cluster-info
    kubectl get nodes
    docker --version
+   /usr/local/bin/kubelab-security-check
    ```
 
 2. **Deploy Vulnerable Applications**:
    ```bash
    # Review manifests first!
-   ls -la /opt/kubelab/kubernetes-goat/deploy/
-   kubectl apply -f /opt/kubelab/kubernetes-goat/deploy/
+   ls -la /opt/kubelab/kubernetes-goat/scenarios/
+   kubectl apply -f /opt/kubelab/kubernetes-goat/scenarios/
    ```
 
 3. **Monitor Security Events**:
    ```bash
-   # Falco alerts
-   kubectl logs -n falco -l app.kubernetes.io/name=falco -f
+   # Falco alerts (if using host install)
+   journalctl -u falco -f
    
    # Audit logs
    ausearch -k kubelab_docker
    tail -f /var/log/audit/audit.log | grep kubelab
    ```
 
-4. **Create VM Snapshot**:
+4. **Security Status Check**:
+   ```bash
+   # Run the included security monitoring script
+   /usr/local/bin/kubelab-security-check
+   ```
+
+5. **Create VM Snapshot**:
    Take a snapshot for easy reset between exercises.
+
+## Troubleshooting
+
+Common issues and solutions:
+
+### kubectl Connection Refused
+If kubectl shows connection errors after setup:
+```bash
+sudo cp /root/.kube/config ~/.kube/config
+sudo chown $(id -u):$(id -g) ~/.kube/config
+```
+
+### Docker Permission Issues
+Log out and back in, or run:
+```bash
+newgrp docker
+```
+
+### Resource Directory Missing
+Ensure you have the complete repository with the `resources/` directory:
+```bash
+ls -la resources/
+```
+
+## Configuration
+
+Key configuration variables (edit in `setup.sh` as needed):
+
+```bash
+readonly INSTALL_DIR="/opt/kubelab"
+readonly VULN_REPO_URL="https://github.com/madhuakula/kubernetes-goat.git"
+readonly KIND_VERSION="v0.26.0"
+```
 
 ## Security Warning
 
-This environment contains intentionally vulnerable applications. Use only in isolated lab environments. Never expose to production networks.
-
-## Support
-
-- Check `setup.log` for detailed error information
-- Verify system requirements are met
-- Ensure network connectivity for downloads
-- Review Ubuntu version compatibility
+This environment contains intentionally vulnerable applications designed for security research and training. Use only in isolated lab environments. Never expose to production networks or the internet.
 
 ## Contributing
 

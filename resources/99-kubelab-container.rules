@@ -1,0 +1,30 @@
+# KubeLab Container Security Audit Rules
+
+# Monitor Docker daemon and socket access
+-w /var/lib/docker/ -p wa -k kubelab_docker
+-w /run/docker.sock -p rw -k kubelab_docker_sock
+-w /usr/bin/docker -p x -k kubelab_docker_exec
+
+# Monitor container runtime
+-w /usr/bin/containerd -p x -k kubelab_containerd
+-w /usr/bin/runc -p x -k kubelab_runc
+
+# Monitor Kubernetes components
+-w /usr/local/bin/kubectl -p x -k kubelab_kubectl
+-w /usr/local/bin/kind -p x -k kubelab_kind
+
+# Monitor sensitive system calls that could indicate container escapes
+-a always,exit -F arch=b64 -S mount,umount2 -k kubelab_mount
+-a always,exit -F arch=b64 -S unshare,setns -k kubelab_namespace
+-a always,exit -F arch=b64 -S ptrace -k kubelab_ptrace
+-a always,exit -F arch=b64 -S personality -k kubelab_personality
+
+# Monitor capability changes
+-a always,exit -F arch=b64 -S capset -k kubelab_capabilities
+
+# Monitor privileged operations
+-a always,exit -F arch=b64 -S chroot -k kubelab_chroot
+-a always,exit -F arch=b64 -S pivot_root -k kubelab_pivot_root
+
+# Monitor process execution in containers (when possible)
+-a always,exit -F arch=b64 -S execve -F exe=/proc/*/root/* -k kubelab_container_exec
