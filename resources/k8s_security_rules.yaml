@@ -1,11 +1,27 @@
-# Detailed Falco rules for container escape and suspicious activity
+# Falco rules for container escape and suspicious activity
+# Using macro to exclude system/control-plane pods for a kind single-node lab
+
+# Macro definition for system pod exclusion
+- macro: system_pod_exclusion
+  condition: >
+    container.name contains "kind-control-plane" or
+    container.name contains "coredns" or
+    container.name contains "kindnet" or
+    container.name contains "kube-apiserver" or
+    container.name contains "kube-controller-manager" or
+    container.name contains "kube-proxy" or
+    container.name contains "kube-scheduler" or
+    container.name contains "local-path-provisioner"
+
+# Rules
 
 - rule: shell_in_container
   desc: notice shell activity within a container
   condition: >
+    container.id != host and
     evt.type = execve and
     evt.dir = < and
-    container.id != host and
+    not system_pod_exclusion and
     (proc.name = bash or proc.name = sh or proc.name = ksh)
   output: >
     shell in container |
@@ -14,11 +30,12 @@
   priority: WARNING
 
 - rule: write_to_host
-  desc: container writing to host filesystem
+  desc: container writing to sensitive host paths
   condition: >
     container.id != host and
     evt.type in (open, openat, creat, truncate) and
-    (fd.name startswith "/host" or fd.name startswith "/etc")
+    (fd.name startswith "/host" or fd.name startswith "/etc") and
+    not system_pod_exclusion
   output: >
     container writing to sensitive host path |
     user=%user.name container_id=%container.id container_name=%container.name
@@ -30,7 +47,8 @@
   condition: >
     container.id != host and
     evt.type in (open, openat, read, write) and
-    fd.name="/var/run/docker.sock"
+    fd.name="/var/run/docker.sock" and
+    not system_pod_exclusion
   output: >
     container accessing docker.sock |
     user=%user.name container_id=%container.id container_name=%container.name
@@ -42,7 +60,8 @@
   condition: >
     container.id != host and
     container.privileged = true and
-    evt.type in (setns, clone, unshare)
+    evt.type in (setns, clone, unshare) and
+    not system_pod_exclusion
   output: >
     privileged container detected |
     user=%user.name container_id=%container.id container_name=%container.name
@@ -53,7 +72,8 @@
   desc: container adding capabilities
   condition: >
     container.id != host and
-    evt.type = capset
+    evt.type = capset and
+    not system_pod_exclusion
   output: >
     container added capabilities |
     user=%user.name container_id=%container.id container_name=%container.name
@@ -66,7 +86,7 @@
     container.id != host and
     evt.type in (open, openat) and
     fd.name startswith "/proc" and
-    not container.name contains "kind-control-plane"
+    not system_pod_exclusion
   output: >
     container accessing host /proc |
     user=%user.name container_id=%container.id container_name=%container.name
