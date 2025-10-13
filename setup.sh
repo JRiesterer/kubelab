@@ -219,7 +219,7 @@ echo "deb [signed-by=/usr/share/keyrings/falco-archive-keyring.gpg] https://down
 
 # Update package list and install Falco
 apt-get update -qq
-if ! apt-get install -y --no-install-recommends falco; then
+if ! DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends falco; then
     echo "⚠ Falco installation failed. Check network or package sources."
     exit 1
 fi
@@ -230,26 +230,29 @@ mkdir -p /etc/falco/rules.d
 # Copy custom Kubernetes/Container security rules
 cp "${RESOURCES_DIR}/k8s_security_rules.yaml" /etc/falco/rules.d/k8s_security_rules.yaml
 
-# Configure Falco to use JSON output for easier parsing
+# Configure Falco to use JSON output
 falco_config="/etc/falco/falco.yaml"
 if [ -f "$falco_config" ]; then
     cp "$falco_config" "${falco_config}.bak"
     sed -i 's/^json_output: false$/json_output: true/' "$falco_config"
     sed -i 's/^buffered_outputs: false$/buffered_outputs: true/' "$falco_config"
-    # Falco automatically loads /etc/falco/rules.d/*.yaml, no need for manual sed
 fi
 
-# Enable and start Falco
+# Determine the actual Falco service unit (modern eBPF)
+FALCO_UNIT="falco-modern-bpf.service"
+
+echo "Enabling and starting Falco service: $FALCO_UNIT"
 systemctl daemon-reload
-systemctl enable falco
-systemctl restart falco
+systemctl enable "$FALCO_UNIT"
+systemctl restart "$FALCO_UNIT"
 
 # Verify Falco is running
-if systemctl is-active --quiet falco; then
+if systemctl is-active --quiet "$FALCO_UNIT"; then
     echo "✓ Falco runtime security monitoring is active"
 else
-    echo "⚠ Falco may not be running properly - check 'systemctl status falco'"
+    echo "⚠ Falco may not be running properly - check 'systemctl status $FALCO_UNIT'"
 fi
+
 
 ###
 ### Install comprehensive security monitoring
