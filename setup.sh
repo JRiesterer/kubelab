@@ -51,7 +51,7 @@ readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
 # Progress tracking
-readonly TOTAL_STEPS=10
+readonly TOTAL_STEPS=12
 CURRENT_STEP=0
 
 ###
@@ -75,7 +75,7 @@ log_info() {
     local message="$*"
     
     printf '%s INFO: %s\n' "$timestamp" "$message" >> "$LOGFILE"
-    printf "${BLUE}ℹ${NC} %s\n" "$message"
+    printf "ℹ %s\n" "$message"
 }
 
 log_success() {
@@ -83,7 +83,7 @@ log_success() {
     local message="$*"
     
     printf '%s SUCCESS: %s\n' "$timestamp" "$message" >> "$LOGFILE"
-    printf "${GREEN}✓${NC} %s\n" "$message"
+    printf "✓ %s\n" "$message"
 }
 
 log_warning() {
@@ -91,7 +91,7 @@ log_warning() {
     local message="$*"
     
     printf '%s WARNING: %s\n' "$timestamp" "$message" >> "$LOGFILE"
-    printf "${YELLOW}⚠${NC} %s\n" "$message"
+    printf "⚠ %s\n" "$message"
 }
 
 log_error() {
@@ -99,12 +99,12 @@ log_error() {
     local message="$*"
     
     printf '%s ERROR: %s\n' "$timestamp" "$message" >> "$LOGFILE"
-    printf "${RED}✗${NC} %s\n" "$message"
+    printf "✗ %s\n" "$message"
 }
 
 die() { 
     log_error "$*"
-    printf "${RED}${BOLD}Script failed. Check ${LOGFILE} for details.${NC}\n"
+    printf "Script failed. Check ${LOGFILE} for details.\n"
     exit 1
 }
 
@@ -118,8 +118,8 @@ show_progress() {
     local completed=$((current * width / total))
     local remaining=$((width - completed))
     
-    printf "\r${BOLD}Progress:${NC} ["
-    printf "${GREEN}%*s${NC}" "$completed" "" | tr ' ' '='
+    printf "\rProgress: ["
+    printf "%*s" "$completed" "" | tr ' ' '='
     printf "%*s" "$remaining" "" | tr ' ' '-'
     printf "] %d%% - %s" "$percentage" "$step_name"
     
@@ -214,7 +214,7 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 # Banner function
 print_banner() {
-    printf "\n${BOLD}${BLUE}"
+    printf "\n"
     printf "╔══════════════════════════════════════════════════════════════════════════════╗\n"
     printf "║                          Kubernetes Security Lab Setup                      ║\n"
     printf "║                         Ubuntu Server 24.04.3 LTS                          ║\n"
@@ -222,7 +222,7 @@ print_banner() {
     printf "║  This script will install and configure a complete Kubernetes security      ║\n"
     printf "║  lab environment for evaluating container escape exploits and mitigations. ║\n"
     printf "╚══════════════════════════════════════════════════════════════════════════════╝\n"
-    printf "${NC}\n"
+    printf "\n"
 }
 
 ###
@@ -246,13 +246,13 @@ cleanup() {
     
     if [ $exit_code -eq 0 ]; then
         log_success "Script completed successfully in ${duration} seconds"
-        printf "\n${GREEN}${BOLD}✓ Setup completed successfully!${NC}\n"
-        printf "${CYAN}Check ${LOGFILE} for detailed logs.${NC}\n\n"
+        printf "\n✓ Setup completed successfully!\n"
+        printf "Check ${LOGFILE} for detailed logs.\n\n"
     else
         log_error "Script failed after ${duration} seconds with exit code $exit_code"
-        printf "\n${RED}${BOLD}✗ Setup failed!${NC}\n"
-        printf "${YELLOW}Check ${LOGFILE} for error details.${NC}\n"
-        printf "${CYAN}Last 20 lines of log:${NC}\n"
+        printf "\n✗ Setup failed!\n"
+        printf "Check ${LOGFILE} for error details.\n"
+        printf "Last 20 lines of log:\n"
         tail -n 20 "$LOGFILE" 2>/dev/null || true
         printf "\n"
     fi
@@ -1061,79 +1061,62 @@ final_verification
 
 log_success "Kubernetes Security Lab setup completed successfully!"
 
-# Generate summary report
-cat << EOF
+# Generate compact summary report
+printf "\n"
+printf "╔══════════════════════════════════════════════════════════════════════════════╗\n"
+printf "║                           SETUP COMPLETED SUCCESSFULLY                      ║\n"
+printf "╚══════════════════════════════════════════════════════════════════════════════╝\n"
+printf "\n"
 
-${BOLD}${GREEN}╔══════════════════════════════════════════════════════════════════════════════╗
-║                           SETUP COMPLETED SUCCESSFULLY                      ║
-╚══════════════════════════════════════════════════════════════════════════════╝${NC}
+printf "Installation Summary:\n"
+printf "├─ ✓ Docker CE: %s\n" "$(docker --version 2>/dev/null | cut -d' ' -f1-3 || echo "Check failed")"
+printf "├─ ✓ kubectl: %s\n" "$(kubectl version --client 2>/dev/null | grep -o 'GitVersion:"[^"]*"' | cut -d'"' -f2 || echo "Check failed")"
+printf "├─ ✓ kind: %s\n" "$(kind --version 2>/dev/null || echo "Check failed")"
+printf "├─ ✓ Helm: %s\n" "$(helm version 2>/dev/null | grep -o 'Version:"[^"]*"' | cut -d'"' -f2 || echo "Check failed")"
+printf "├─ ✓ Kubernetes Cluster: %s\n" "$(kubectl config current-context 2>/dev/null || echo "No context")"
+printf "├─ ✓ Falco Security: %s pods deployed\n" "$(kubectl get pods -n falco --no-headers 2>/dev/null | wc -l)"
+printf "├─ ✓ Vulnerable Lab Repo: %s\n" "${VULN_REPO_DIR}"
+printf "├─ ✓ auditd: %s\n" "$(systemctl is-active auditd 2>/dev/null || echo "inactive")"
+printf "└─ ✓ AIDE: %s\n" "$([ -f /var/lib/aide/aide.db ] && echo "configured" || echo "check manual setup")"
 
-${BOLD}Installation Summary:${NC}
-├─ ${GREEN}✓${NC} Docker CE: $(docker --version 2>/dev/null || echo "Check failed")
-├─ ${GREEN}✓${NC} kubectl: $(kubectl version --client 2>/dev/null | grep -o 'GitVersion:"[^"]*"' | cut -d'"' -f2 || echo "Check failed")  
-├─ ${GREEN}✓${NC} kind: $(kind --version 2>/dev/null || echo "Check failed")
-├─ ${GREEN}✓${NC} Helm: $(helm version 2>/dev/null | grep -o 'Version:"[^"]*"' | cut -d'"' -f2 || echo "Check failed")
-├─ ${GREEN}✓${NC} Kubernetes Cluster: $(kubectl config current-context 2>/dev/null || echo "No context")
-├─ ${GREEN}✓${NC} Falco Security: $(kubectl get pods -n falco --no-headers 2>/dev/null | wc -l) pods deployed
-├─ ${GREEN}✓${NC} Vulnerable Lab Repo: ${VULN_REPO_DIR}
-├─ ${GREEN}✓${NC} auditd: $(systemctl is-active auditd 2>/dev/null || echo "inactive")
-└─ ${GREEN}✓${NC} AIDE: $([ -f /var/lib/aide/aide.db ] && echo "configured" || echo "check manual setup")
+printf "\nImportant Next Steps:\n"
+printf "\n1. Restart Terminal Session:\n"
+printf "   # Log out and back in to refresh docker group membership\n"
+printf "   # Or run: newgrp docker\n"
 
-${BOLD}${YELLOW}Important Next Steps:${NC}
+printf "\n2. Verify Cluster Access:\n"
+printf "   kubectl cluster-info\n"
+printf "   kubectl get nodes\n"
+printf "   kubectl get pods --all-namespaces\n"
 
-${BOLD}1. Restart Terminal Session:${NC}
-   ${CYAN}# Log out and back in to refresh docker group membership
-   # Or run: newgrp docker${NC}
+printf "\n3. Deploy Vulnerable Applications:\n"
+printf "   # IMPORTANT: Review manifests before applying!\n"
+printf "   ls -la %s/deploy/ %s/manifests/ 2>/dev/null\n" "${VULN_REPO_DIR}" "${VULN_REPO_DIR}"
+printf "   \n"
+printf "   # After review, deploy:\n"
+printf "   kubectl apply -f %s/deploy/  # (adjust path as needed)\n" "${VULN_REPO_DIR}"
 
-${BOLD}2. Verify Cluster Access:${NC}
-   ${CYAN}kubectl cluster-info
-   kubectl get nodes
-   kubectl get pods --all-namespaces${NC}
+printf "\n4. Monitor Security Events:\n"
+printf "   # View Falco security alerts:\n"
+printf "   kubectl logs -n falco -l app.kubernetes.io/name=falco -f\n"
+printf "   \n"
+printf "   # View audit logs:\n"
+printf "   ausearch -k kubelab_docker\n"
+printf "   tail -f /var/log/audit/audit.log | grep kubelab\n"
 
-${BOLD}3. Deploy Vulnerable Applications:${NC}
-   ${CYAN}# IMPORTANT: Review manifests before applying!
-   ls -la ${VULN_REPO_DIR}/deploy/ ${VULN_REPO_DIR}/manifests/ 2>/dev/null
-   
-   # After review, deploy:
-   kubectl apply -f ${VULN_REPO_DIR}/deploy/  # (adjust path as needed)${NC}
+printf "\n5. Create System Snapshot:\n"
+printf "   # Take a VM snapshot now for easy reset between exercises\n"
+printf "   # Name suggestion: kubelab_ready_$(date +%%Y%%m%%d)\n"
 
-${BOLD}4. Monitor Security Events:${NC}
-   ${CYAN}# View Falco security alerts:
-   kubectl logs -n falco -l app.kubernetes.io/name=falco -f
-   
-   # View audit logs:
-   ausearch -k kubelab_docker
-   tail -f /var/log/audit/audit.log | grep kubelab${NC}
+printf "\nLog Files:\n"
+printf "├─ Setup Log: %s\n" "${LOGFILE}"
+printf "├─ Audit Log: /var/log/audit/audit.log\n"
+printf "└─ Container Logs: kubectl logs -n <namespace> <pod>\n"
 
-${BOLD}5. Create System Snapshot:${NC}
-   ${CYAN}# Take a VM snapshot now for easy reset between exercises
-   # Name suggestion: kubelab_ready_$(date +%Y%m%d)${NC}
-
-${BOLD}6. Security Analysis Tools:${NC}
-   ${CYAN}# Container inspection:
-   docker ps -a
-   docker inspect <container_id>
-   
-   # Process monitoring:
-   htop
-   ps aux --forest
-   
-   # Network monitoring:
-   netstat -tlnp
-   ss -tlnp${NC}
-
-${BOLD}Log Files:${NC}
-├─ Setup Log: ${CYAN}${LOGFILE}${NC}
-├─ Audit Log: ${CYAN}/var/log/audit/audit.log${NC}
-└─ Container Logs: ${CYAN}kubectl logs -n <namespace> <pod>${NC}
-
-${BOLD}${RED}Security Reminder:${NC}
-${YELLOW}This environment contains intentionally vulnerable applications.
-Only use this in isolated lab environments. Never expose to production networks.${NC}
-
-${BOLD}${GREEN}Happy Security Testing! 🛡️${NC}
-
-EOF
+printf "\nSecurity Reminder:\n"
+printf "This environment contains intentionally vulnerable applications.\n"
+printf "Only use this in isolated lab environments. Never expose to production networks.\n"
+printf "\n"
 
 # Log final completion time
 end_time=$(date +%s)

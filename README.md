@@ -36,6 +36,7 @@ The script includes special handling for git operations to eliminate user prompt
 
 ## Quick Start
 
+### Standard Setup (Recommended)
 ```bash
 # Clone the repository
 git clone https://github.com/JRiesterer/kubelab.git
@@ -48,6 +49,13 @@ chmod +x setup.sh
 sudo ./setup.sh
 ```
 
+### Minimal Setup (Fast, No Frills)
+```bash
+# For a minimal installation with no logging or progress bars
+chmod +x setup_minimal.sh
+sudo ./setup_minimal.sh
+```
+
 ## System Requirements
 
 - OS: Ubuntu Server 24.04.3 LTS (or compatible)
@@ -56,7 +64,27 @@ sudo ./setup.sh
 - Network: Internet connectivity required for downloads
 - Privileges: Root/sudo access required
 
+## Scripts Available
+
+### setup.sh (Full Featured)
+The main setup script with enhanced features:
+- Colored output with status indicators
+- Progress bar showing installation progress
+- Comprehensive logging to `setup.log`
+- Enhanced error handling and retry mechanisms
+- Detailed verification and final summary
+
+### setup_minimal.sh (Minimal)
+A streamlined version for quick setup:
+- Essential components only
+- Fail-fast behavior - stops immediately on errors
+- No logging or progress bars
+- Direct error output to console
+- Faster execution with minimal overhead
+
 ## Installation Progress
+
+### Standard Setup (setup.sh)
 
 The script provides real-time progress indication:
 
@@ -75,6 +103,22 @@ Steps include:
 8. Vulnerable lab repository setup
 9. Falco security monitoring
 10. Host security tools (auditd & AIDE)
+11. Additional security configuration
+12. Final verification
+
+### Minimal Setup (setup_minimal.sh)
+The minimal script performs these essential steps:
+1. Preflight checks (OS, network, root access)
+2. Base packages installation
+3. Docker CE installation
+4. kubectl installation
+5. kind installation  
+6. Helm installation
+7. Kind cluster creation
+8. Vulnerable lab repository clone
+9. Falco installation (best effort)
+10. Basic audit tools
+11. Final verification
 
 ## Configuration
 
