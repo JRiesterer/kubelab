@@ -209,7 +209,7 @@ else
 fi
 
 ###
-### Install and configure Falco runtime security
+### Install and configure Falco runtime security on host
 ###
 echo "Installing Falco runtime security monitoring..."
 
@@ -218,48 +218,35 @@ curl -fsSL https://falco.org/repo/falcosecurity-packages.asc | gpg --dearmor -o 
 echo "deb [signed-by=/usr/share/keyrings/falco-archive-keyring.gpg] https://download.falco.org/packages/deb stable main" > /etc/apt/sources.list.d/falcosecurity.list
 
 # Update package list and install Falco
-apt-get update >/dev/null 2>&1
-apt-get install -y --no-install-recommends falco 2>/dev/null || echo "⚠ Falco installation may have failed"
-
-# Copy custom Kubernetes rules for container security
-mkdir -p "/etc/falco/rules.d"
-cp "${RESOURCES_DIR}/k8s_security_rules.yaml" "/etc/falco/rules.d/k8s_security_rules.yaml"
-
-# Configure Falco for container monitoring
-falco_config="/etc/falco/falco.yaml"
-if [ -f "$falco_config" ]; then
-    # Backup original config
-    cp "$falco_config" "${falco_config}.bak" 2>/dev/null || true
-    
-    # Update Falco configuration for enhanced monitoring
-    sed -i 's/^json_output: false$/json_output: true/' "$falco_config" 2>/dev/null || true
-    sed -i 's/^buffered_outputs: false$/buffered_outputs: true/' "$falco_config" 2>/dev/null || true
-    
-    # Add our custom rules file specifically (in addition to rules.d directory)
-    if ! grep -q "/etc/falco/rules.d/k8s_security_rules.yaml" "$falco_config" 2>/dev/null; then
-        sed -i '/rules_file:/a\  - /etc/falco/rules.d/k8s_security_rules.yaml' "$falco_config" 2>/dev/null || true
-    fi
+apt-get update -qq
+if ! apt-get install -y --no-install-recommends falco; then
+    echo "⚠ Falco installation failed. Check network or package sources."
+    exit 1
 fi
 
-# Create Falco systemd service override for better logging
-falco_override_dir="/etc/systemd/system/falco.service.d"
-mkdir -p "$falco_override_dir"
-cp "${RESOURCES_DIR}/falco-override.conf" "$falco_override_dir/override.conf"
+# Ensure rules directory exists
+mkdir -p /etc/falco/rules.d
+
+# Copy custom Kubernetes/Container security rules
+cp "${RESOURCES_DIR}/k8s_security_rules.yaml" /etc/falco/rules.d/k8s_security_rules.yaml
+
+# Configure Falco to use JSON output for easier parsing
+falco_config="/etc/falco/falco.yaml"
+if [ -f "$falco_config" ]; then
+    cp "$falco_config" "${falco_config}.bak"
+    sed -i 's/^json_output: false$/json_output: true/' "$falco_config"
+    sed -i 's/^buffered_outputs: false$/buffered_outputs: true/' "$falco_config"
+    # Falco automatically loads /etc/falco/rules.d/*.yaml, no need for manual sed
+fi
 
 # Enable and start Falco
 systemctl daemon-reload
-systemctl enable falco 2>/dev/null || true
-systemctl start falco 2>/dev/null || true
+systemctl enable falco
+systemctl restart falco
 
-# Verify Falco is running and rules are loaded
+# Verify Falco is running
 if systemctl is-active --quiet falco; then
     echo "✓ Falco runtime security monitoring is active"
-    # Check if custom rules are loaded
-    if [ -f "/etc/falco/rules.d/k8s_security_rules.yaml" ]; then
-        echo "✓ Custom Kubernetes security rules deployed"
-    else
-        echo "⚠ Custom rules may not be deployed properly"
-    fi
 else
     echo "⚠ Falco may not be running properly - check 'systemctl status falco'"
 fi

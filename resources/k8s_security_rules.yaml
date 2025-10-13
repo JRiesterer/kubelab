@@ -1,70 +1,65 @@
-# KubeLab Custom Kubernetes Security Rules - Falco 0.41.x compatible
+# Detailed Falco rules for container escape and suspicious activity
 
-- rule: Container Escape Attempt via Privileged Container
-  desc: Detect potential container escape attempts through privileged containers
-  condition: >
-    evt.type = execve and container.id exists and
-    (proc.name in (nsenter, unshare, capsh, chroot, pivot_root) or
-     proc.args contains "privileged" or
-     proc.args contains "--cap-add")
-  output: "Container escape attempt detected (user=%user.name command=%proc.cmdline container_id=%container.id)"
-  priority: CRITICAL
-  tags: [container_escape, privilege_escalation]
+rules:
+  - rule: shell_in_container
+    desc: notice shell activity within a container
+    condition: >
+      evt.type = execve and
+      evt.dir = < and
+      container.id != host and
+      (proc.name = bash or proc.name = sh or proc.name = ksh)
+    output: >
+      shell in container |
+      user=%user.name container_id=%container.id container_name=%container.name 
+      shell=%proc.name parent=%proc.pname cmdline=%proc.cmdline
+    priority: WARNING
 
-- rule: Mount Sensitive Host Path in Container
-  desc: Detect mounting of sensitive host paths into containers
-  condition: >
-    evt.type = execve and container.id exists and
-    (proc.args contains "/etc" or
-     proc.args contains "/proc" or
-     proc.args contains "/sys" or
-     proc.args contains "/var/run/docker.sock" or
-     proc.args contains "/dev")
-  output: "Sensitive host path mounted in container (user=%user.name command=%proc.cmdline container_id=%container.id path=%proc.args)"
-  priority: WARNING
-  tags: [host_mount, privilege_escalation]
+  - rule: write_to_host
+    desc: container writing to host filesystem
+    condition: >
+      container.id != host and
+      evt.type in (open, openat) and
+      fd.name startswith "/host" or fd.name startswith "/etc"
+    output: >
+      container writing to sensitive host path |
+      user=%user.name container_id=%container.id container_name=%container.name
+      file=%fd.name cmdline=%proc.cmdline
+    priority: CRITICAL
 
-- rule: Container Process with Suspicious Network Activity
-  desc: Detect containers making suspicious network connections
-  condition: >
-    container.id exists and
-    (fd.sport in (22,23,135,139,445,1433,1521,3306,3389,5432,5984,6379,8086,9200,11211,27017) or
-     fd.dport in (22,23,135,139,445,1433,1521,3306,3389,5432,5984,6379,8086,9200,11211,27017))
-  output: "Suspicious network activity from container (user=%user.name command=%proc.cmdline container_id=%container.id proto=%fd.l4proto src=%fd.sip sport=%fd.sport dst=%fd.cip dport=%fd.dport)"
-  priority: NOTICE
-  tags: [network, lateral_movement]
+  - rule: docker_socket_access
+    desc: container accessing host Docker socket
+    condition: >
+      container.id != host and
+      fd.name="/var/run/docker.sock"
+    output: >
+      container accessing docker.sock |
+      user=%user.name container_id=%container.id container_name=%container.name
+      cmdline=%proc.cmdline
+    priority: CRITICAL
 
-- rule: Container File Access to Host Filesystem
-  desc: Detect container processes accessing host filesystem outside expected paths
-  condition: >
-    evt.type in (open, openat, creat, open_by_handle_at) and container.id exists and
-    fd.name startswith /host and
-    not fd.name startswith /host/proc and
-    not fd.name startswith /host/sys
-  output: "Container accessing host filesystem (user=%user.name command=%proc.cmdline container_id=%container.id file=%fd.name)"
-  priority: WARNING
-  tags: [host_access, file_access]
+  - rule: privileged_container
+    desc: privileged container detected
+    condition: container.id != host and container.privileged = true
+    output: >
+      privileged container detected |
+      user=%user.name container_id=%container.id container_name=%container.name
+      cmdline=%proc.cmdline
+    priority: CRITICAL
 
-- rule: Kubernetes Secret Access
-  desc: Detect processes accessing Kubernetes secrets
-  condition: >
-    evt.type in (open, openat, creat, open_by_handle_at) and
-    container.id exists and
-    fd.name contains "/var/run/secrets/kubernetes.io/"
-  output: "Kubernetes secret accessed (user=%user.name command=%proc.cmdline container_id=%container.id file=%fd.name)"
-  priority: NOTICE
-  tags: [secrets, kubernetes]
+  - rule: suspicious_capabilities
+    desc: container adding capabilities
+    condition: container.id != host and evt.type=capset
+    output: >
+      container added capabilities |
+      user=%user.name container_id=%container.id container_name=%container.name
+      cmdline=%proc.cmdline
+    priority: WARNING
 
-- rule: Container Running with Excessive Privileges
-  desc: Detect containers running with dangerous capabilities
-  condition: >
-    evt.type = execve and container.id exists and
-    (proc.args contains "SYS_ADMIN" or
-     proc.args contains "SYS_PTRACE" or
-     proc.args contains "SYS_MODULE" or
-     proc.args contains "DAC_OVERRIDE" or
-     proc.args contains "SETUID" or
-     proc.args contains "SETGID")
-  output: "Container running with excessive privileges (user=%user.name command=%proc.cmdline container_id=%container.id capabilities=%proc.args)"
-  priority: WARNING
-  tags: [capabilities, privilege_escalation]
+  - rule: proc_mount_escape
+    desc: container accessing host /proc
+    condition: container.id != host and fd.name startswith "/proc"
+    output: >
+      container accessing host /proc |
+      user=%user.name container_id=%container.id container_name=%container.name
+      file=%fd.name cmdline=%proc.cmdline
+    priority: CRITICAL
