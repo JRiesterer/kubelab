@@ -15,7 +15,7 @@
 	3. Do not enable Virtualization Intel VT-x/EPT or AMD-V/RVI (no need)
 	4. Do not Virtualize CPU performance counters (no need)
 	5. Set network to NAT / Bridged, needed for initial setup. Will be changed before exploitation
-![[vmware workstation pro VM settings.png]]
+![vmware workstation pro VM settings](https://github.com/JRiesterer/kubelab/blob/master/ref/vmsettings.png)
 6. Run the VM to Manually install Ubuntu
 	1. Select "Try or Install Ubuntu Server"
 	2. Select language (English)
