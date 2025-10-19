@@ -1,235 +1,92 @@
-# Kubernetes Security Lab Setup
+# Kubernetes Provisioning & Setup
+# Requirements
+1. Windows 11 Host
+2. VMware Workstation Pro (17)
+3. Ubuntu Server 24.04.3 LTS iso
+4. Hardware support for 4 vCPU cores & 8/16 GB RAM
+# Provisioning
+1. Typical Installation
+2. Installer disc image file (iso) -> select Ubuntu Server 24.04.3
+3. Name VM: KubernetesResearch
+4. Set Disc Capacity = 80 GB (or more)
+5. Customize Hardware:
+	1. Memory: Set 16384 MB / 16 GB, minimum of 8192 MB / 8 GB memory
+	2. Processors: 1 processor with 4 cores per processor.
+	3. Do not enable Virtualization Intel VT-x/EPT or AMD-V/RVI (no need)
+	4. Do not Virtualize CPU performance counters (no need)
+	5. Set network to NAT / Bridged, needed for initial setup. Will be changed before exploitation
+![[vmware workstation pro VM settings.png]]
+6. Run the VM to Manually install Ubuntu
+	1. Select "Try or Install Ubuntu Server"
+	2. Select language (English)
+	3. Install base (non-minimized) Ubuntu Server without Third-Party Drivers
+	4. Configure your network (likely ens33)
+	5. Do not configure a proxy
+	6. Use the default mirror location: "http://us.archive.ubuntu.com/ubuntu"
+	7. Use entire disk for install
+		1. Do not set up the disk as an LVM group. This will simplify our use of snapshots and 80 GB is more than enough to house our lab environment. We should not need to increase the size of the partition.
+	8. Use standard partition settings (ext4)
+	9. Fill out profile information
+		1. Your name: dev
+		2. Your servers name: kubelab
+		3. Pick a username: labadmin
+		4. Choose and confirm a password: labadmin
+	10. Skip Ubuntu Pro
+	11. Install OpenSSH Server
+		1. Enable Install OpenSSH Server
+		2. Allow password authentication over SSH
+		3. Do not import an SSH key
+	12. Skip / Deselect all "Featured Server Snaps"
+		1. packages / installation / setup will be handled in the provisioning script
+	13. Select "Done" and wait for installation/setup to complete
+	14. Once completed select "I Finished Installing" in VMware Workstation
+	15. In the VM, click "Reboot Now"
+	16. You may see an error that installation media has not been removed, wait a few seconds and hit enter to reboot. VMware Workstation should remove the installation media after you clicked "I Finished Installing" but it has a small delay on when it updates.
+# Setup
+Ensure that your VM is operational (turn it off and back on)
+Attempt to login to ensure that your account works and that you know your password
 
-An automated setup script for creating a Kubernetes security lab environment on Ubuntu Server 24.04.3 LTS. This lab is designed for evaluating container escape exploits and security mitigations in a controlled environment.
-
-## Features
-
-### Enhanced User Experience
-- Colored output with clear status indicators
-- Progress bar showing installation progress
-- Comprehensive logging to `setup.log` with timestamps
-- Zero user interaction - fully automated installation
-
-### Robust Installation
-- Retry mechanisms for network operations
-- Idempotent operations - safe to run multiple times
-- Enhanced error handling with detailed failure reporting
-- Complete dependency management with verification
-
-### Security Tools Included
-- Docker CE - Container runtime
-- kubectl - Kubernetes command-line tool
-- kind - Kubernetes in Docker for local clusters
-- Helm - Kubernetes package manager
-- Falco - Runtime security monitoring
-- auditd - Linux audit framework with custom rules
-- AIDE - File integrity monitoring
-- Additional security tools - strace, tcpdump, lsof, htop, etc.
-
-### Git Clone Improvements
-The script includes special handling for git operations to eliminate user prompts:
-
-- Non-interactive configuration - Sets environment variables to prevent prompts
-- SSH to HTTPS conversion - Automatically converts SSH URLs to HTTPS for public repos
-- Credential handling - Configures git to never prompt for credentials
-- Timeout protection - Prevents hanging on network issues
-
-## Quick Start
-
-## Quick Start
-
+1. Save an initial, clean snapshot to use if installation fails / to test your setup
+	1. Shut down the VM completely
+	2. VM > Snapshot > Take Snapshot: Name it kubelab_base_clean
+2. Run the following commands to reach a checkpoint location
 ```bash
-# Clone the repository
+sudo apt update && sudo apt upgrade -y
+sudo apt install open-vm-tools open-vm-tools-desktop -y
+sudo sytemctl enable ssh
+sudo systemctl start ssh
+sudo reboot
+```
+3. Save a new snapshot (avoids wasting time and allows copy-paste)
+4. Run the following:
+```bash
 git clone https://github.com/JRiesterer/kubelab.git
 cd kubelab
-
-# Make the script executable
-chmod +x setup.sh
-
-# Run the setup (requires sudo)
-sudo ./setup.sh
+chmod +x *.sh
 ```
+5. Finish setup with `sudo ./setup.sh` 
+6. Check `docker` group status (`groups`, `newgrp docker`)
+7. Check system security settings with `sudo kubelab-security-check`
 
-## System Requirements
-
-- OS: Ubuntu Server 24.04.3 LTS (or compatible)
-- Memory: 4GB RAM minimum, 8GB recommended
-- Storage: 20GB free space minimum
-- Network: Internet connectivity required for downloads
-- Privileges: Root/sudo access required
-
-## Installation Process
-
-The setup script provides a streamlined, fail-fast installation:
-- Essential components only with comprehensive security monitoring
-- Direct error output to console for immediate feedback
-- Fast execution with minimal overhead
-- Comprehensive security tools and monitoring
-
-## Installation Steps
-
-The script installs and configures:
-1. Preflight checks (OS, network, requirements)
-2. Base package installation and updates
-3. Docker CE installation and configuration
-4. kubectl installation and verification
-5. kind installation and cluster creation
-6. Helm installation
-7. Kubernetes cluster creation
-8. Vulnerable lab repository setup
-9. Falco security monitoring
-10. Host security tools (auditd & AIDE)
-11. Additional security configuration
-12. Final verification
-
-### Minimal Setup (setup_minimal.sh)
-The minimal script performs these essential steps:
-1. Preflight checks (OS, network, root access)
-2. Base packages installation
-3. Docker CE installation
-4. kubectl installation
-5. kind installation  
-6. Helm installation
-7. Kind cluster creation
-8. Vulnerable lab repository clone
-9. Falco installation (best effort)
-10. Basic audit tools
-11. Final verification
-
-## Configuration
-6. Helm installation and verification
-7. Vulnerable lab repository cloning (Kubernetes Goat)
-8. Falco runtime security monitoring setup
-9. Comprehensive security monitoring (auditd, AIDE)
-10. Kind cluster creation and verification
-11. Final configuration and testing
-
-## Security Monitoring Components
-
-The setup includes comprehensive security monitoring:
-
-### Falco Runtime Security
-- Custom Kubernetes security rules for container escape detection
-- Real-time monitoring of suspicious container activities
-- Integration with system logs via journald
-
-### Audit Framework (auditd)
-- Container-specific audit rules
-- System call monitoring for privilege escalation
-- Docker and Kubernetes component monitoring
-
-### File Integrity Monitoring (AIDE)
-- Database initialization for system file monitoring
-- Detection of unauthorized file changes
-
-### Security Tools
-- strace, ltrace - System call tracing
-- tcpdump - Network monitoring
-- lsof, htop, psmisc - Process monitoring
-- Custom security status checking script
-
-## Configuration Files
-
-All configuration files are organized in the `resources/` directory:
-- `k8s_security_rules.yaml` - Falco custom security rules
-- `99-kubelab-container.rules` - Auditd container monitoring rules
-- `99-kubelab.conf` - System security limits
-- `kubelab-logrotate` - Log rotation configuration
-- `kubelab-security-check` - Security monitoring script
-
-## Security Features
-
-### Audit Rules
-Custom audit rules monitor:
-- Docker daemon and socket access
-- Container runtime operations
-- Kubernetes component execution
-- Privileged system calls
-- Capability changes
-- Container escape indicators
-
-## Post-Installation
-
-After successful setup:
-
-1. **Verify Installation**:
-   ```bash
-   kubectl cluster-info
-   kubectl get nodes
-   docker --version
-   /usr/local/bin/kubelab-security-check
-   ```
-
-2. **Deploy Vulnerable Applications**:
-   ```bash
-   # Review manifests first!
-   ls -la /opt/kubelab/kubernetes-goat/scenarios/
-   kubectl apply -f /opt/kubelab/kubernetes-goat/scenarios/
-   ```
-
-3. **Monitor Security Events**:
-   ```bash
-   # Falco alerts (if using host install)
-   journalctl -u falco -f
-   
-   # Audit logs
-   ausearch -k kubelab_docker
-   tail -f /var/log/audit/audit.log | grep kubelab
-   ```
-
-4. **Security Status Check**:
-   ```bash
-   # Run the included security monitoring script
-   /usr/local/bin/kubelab-security-check
-   ```
-
-5. **Create VM Snapshot**:
-   Take a snapshot for easy reset between exercises.
-
-## Troubleshooting
-
-Common issues and solutions:
-
-### kubectl Connection Refused
-If kubectl shows connection errors after setup:
+# GOAT Finalization
+Run the setup script for kubernetes-goat
 ```bash
-sudo cp /root/.kube/config ~/.kube/config
-sudo chown $(id -u):$(id -g) ~/.kube/config
+cd /opt/kubelab/kubernetes-goat/
+bash setup-kubernetes-goat.sh
 ```
 
-### Docker Permission Issues
-Log out and back in, or run:
-```bash
-newgrp docker
-```
+Wait for the pods to be built and come online:
+`kubectl get pods`
+![[Pasted image 20251019141323.png]]
 
-### Resource Directory Missing
-Ensure you have the complete repository with the `resources/` directory:
-```bash
-ls -la resources/
-```
+Enable access by port-forwarding the pods using:
+`bash access-kubernetes-goat.sh`
+Ensure you are in the `/opt/kubelab/kubernetes-goat/` directory
 
-## Configuration
+Snapshot taken "kubelab_goat_exposed"
+Shut down VM, put in Bridged mode to enable access to exposed ports
 
-Key configuration variables (edit in `setup.sh` as needed):
-
-```bash
-readonly INSTALL_DIR="/opt/kubelab"
-readonly VULN_REPO_URL="https://github.com/madhuakula/kubernetes-goat.git"
-readonly KIND_VERSION="v0.26.0"
-```
-
-## Security Warning
-
-This environment contains intentionally vulnerable applications designed for security research and training. Use only in isolated lab environments. Never expose to production networks or the internet.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Test your changes thoroughly
-4. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+VM > Network Adapter > Bridged
+Get IP using `ifconfig` or `ip addr`
+Connect to services using that IP address and relevant ports from the host machine.
+`IP: 192.168.1.31` for example
