@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: weak-test
+spec:
+  hostPID: true
+  hostIPC: true
+  restartPolicy: Never
+  containers:
+    - name: sleeper
+      image: busybox:1.36
+      command:
+        - /bin/sh
+        - -c
+        - sleep 36000
+      securityContext:
+        privileged: true
+        allowPrivilegeEscalation: true
+        runAsUser: 0
